@@ -1,6 +1,17 @@
 """Core validation logic for frfr."""
 
-from typing import Any, Callable, Protocol, cast, get_args, get_origin
+import collections.abc
+
+from typing import (
+    Any,
+    Callable,
+    Protocol,
+    cast,
+    get_args,
+    get_origin,
+    get_type_hints,
+    is_typeddict,
+)
 
 
 class ValidationError(Exception):
@@ -57,6 +68,7 @@ class Validator:
         self._handlers[type(None)] = parse_none
         self._handlers[list] = parse_list
         self._handlers[tuple] = parse_tuple
+        self._handlers[dict] = parse_dict
 
     def register[T](self, target: type[T], handler: Handler[T]) -> None:
         """Register a handler for a target type.
@@ -90,6 +102,10 @@ class Validator:
         # Handle Any explicitly (special form, not a regular type)
         if target is Any:
             return cast(T, data)
+
+        # Handle TypedDict (detected via is_typeddict)
+        if is_typeddict(target):
+            return parse_typed_dict(self, target, data)
 
         # Try exact match first
         handler = self._handlers.get(target)
@@ -238,6 +254,81 @@ def parse_tuple[*Ts](
         tuple[*Ts],
         tuple(validator.validate(t, item) for t, item in zip(args, data, strict=True)),
     )
+
+
+def parse_dict[K, V](
+    validator: ValidatorProtocol, target: type[dict[K, V]], data: object
+) -> dict[K, V]:
+    """Validate that data is a Mapping, optionally validating keys and values.
+
+    Accepts any Mapping type (dict, OrderedDict, MappingProxyType, etc.).
+    For `dict` (unparameterized): accepts any Mapping.
+    For `dict[K, V]`: validates each key against K and value against V.
+
+    Always returns a new dict (mutable containers are always copied).
+
+    Exposed for composition in custom handlers.
+    """
+    if not isinstance(data, collections.abc.Mapping):
+        raise ValidationError(target, data)
+
+    args = get_args(target)
+    if not args:
+        # Unparameterized dict, just copy
+        return cast(dict[K, V], dict(data))
+
+    # Parameterized dict[K, V] - validate keys and values
+    key_type, value_type = args
+    return {
+        validator.validate(key_type, k): validator.validate(value_type, v)
+        for k, v in data.items()
+    }
+
+
+def parse_typed_dict[T](
+    validator: ValidatorProtocol, target: type[T], data: object
+) -> T:
+    """Validate that data matches a TypedDict schema.
+
+    Validates:
+    - Data is a Mapping
+    - All required keys are present
+    - No extra keys are present
+    - Each value matches its declared type
+
+    Exposed for composition in custom handlers.
+    """
+    if not isinstance(data, collections.abc.Mapping):
+        raise ValidationError(target, data)
+
+    # Get type hints and required/optional keys
+    hints = get_type_hints(target)
+    required_keys = getattr(target, "__required_keys__", frozenset())
+    optional_keys = getattr(target, "__optional_keys__", frozenset())
+    all_keys = required_keys | optional_keys
+
+    # TypedDict keys are always strings
+    data_keys: set[str] = {cast(str, k) for k in data.keys()}
+
+    # Check for missing required keys
+    missing = required_keys - data_keys
+    if missing:
+        missing_key = next(iter(missing))
+        raise ValidationError(target, data, path=f"missing key: {missing_key}")
+
+    # Check for extra keys
+    extra = data_keys - all_keys
+    if extra:
+        extra_key = next(iter(extra))
+        raise ValidationError(target, data, path=f"unexpected key: {extra_key}")
+
+    # Validate each value against its type hint
+    result: dict[str, Any] = {}
+    for key in data_keys:
+        value_type = hints[key]
+        result[key] = validator.validate(value_type, data[key])  # type: ignore[index]
+
+    return cast(T, result)
 
 
 def parse_any(validator: ValidatorProtocol, target: type[Any], data: object) -> Any:

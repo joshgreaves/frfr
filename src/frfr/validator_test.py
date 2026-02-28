@@ -2,7 +2,9 @@
 
 # TODO: Add tests for custom Validator instances (register, override handlers, composition)
 
-from typing import Any
+import collections
+import types
+from typing import Any, NotRequired, Required, TypedDict
 
 import pytest
 
@@ -495,6 +497,232 @@ class TestValidateTuple:
         with pytest.raises(validator.ValidationError) as exc_info:
             validator.validate(tuple[int, ...], (1, True, 3))
         assert "expected int, got bool" in str(exc_info.value)
+
+
+class TestValidateDict:
+    """Tests for dict validation."""
+
+    # Unparameterized dict
+    def test_unparameterized_dict(self) -> None:
+        result = validator.validate(dict, {"a": 1, "b": "two"})
+        assert result == {"a": 1, "b": "two"}
+        assert isinstance(result, dict)
+
+    def test_empty_dict(self) -> None:
+        result = validator.validate(dict, {})
+        assert result == {}
+        assert isinstance(result, dict)
+
+    # Always returns new dict
+    def test_returns_new_dict(self) -> None:
+        original = {"a": 1}
+        result = validator.validate(dict, original)
+        assert result == original
+        assert result is not original
+
+    def test_returns_new_dict_parameterized(self) -> None:
+        original = {"a": 1}
+        result = validator.validate(dict[str, int], original)
+        assert result == original
+        assert result is not original
+
+    # Parameterized dict[K, V]
+    def test_dict_str_int(self) -> None:
+        result = validator.validate(dict[str, int], {"a": 1, "b": 2})
+        assert result == {"a": 1, "b": 2}
+        assert isinstance(result, dict)
+
+    def test_dict_int_str(self) -> None:
+        result = validator.validate(dict[int, str], {1: "a", 2: "b"})
+        assert result == {1: "a", 2: "b"}
+        assert isinstance(result, dict)
+
+    def test_empty_parameterized_dict(self) -> None:
+        result = validator.validate(dict[str, int], {})
+        assert result == {}
+        assert isinstance(result, dict)
+
+    # Key coercion (same rules as values)
+    def test_dict_key_coercion(self) -> None:
+        result = validator.validate(dict[float, str], {1: "a", 2: "b"})
+        assert result == {1.0: "a", 2.0: "b"}
+        assert all(isinstance(k, float) for k in result.keys())
+
+    # Value coercion
+    def test_dict_value_coercion(self) -> None:
+        result = validator.validate(dict[str, float], {"a": 1, "b": 2})
+        assert result == {"a": 1.0, "b": 2.0}
+        assert all(isinstance(v, float) for v in result.values())
+
+    # Nested dicts
+    def test_nested_dict(self) -> None:
+        result = validator.validate(dict[str, dict[str, int]], {"outer": {"inner": 42}})
+        assert result == {"outer": {"inner": 42}}
+        assert isinstance(result["outer"], dict)
+
+    # Mapping coercion
+    def test_ordered_dict_coerces_to_dict(self) -> None:
+        data = collections.OrderedDict([("a", 1), ("b", 2)])
+        result = validator.validate(dict[str, int], data)
+        assert result == {"a": 1, "b": 2}
+        assert type(result) is dict
+
+    def test_mapping_proxy_coerces_to_dict(self) -> None:
+        data = types.MappingProxyType({"a": 1, "b": 2})
+        result = validator.validate(dict[str, int], data)
+        assert result == {"a": 1, "b": 2}
+        assert type(result) is dict
+
+    def test_defaultdict_coerces_to_dict(self) -> None:
+        data: collections.defaultdict[str, int] = collections.defaultdict(int)
+        data["a"] = 1
+        data["b"] = 2
+        result = validator.validate(dict[str, int], data)
+        assert result == {"a": 1, "b": 2}
+        assert type(result) is dict
+
+    def test_counter_coerces_to_dict(self) -> None:
+        data = collections.Counter({"a": 1, "b": 2})
+        result = validator.validate(dict[str, int], data)
+        assert result == {"a": 1, "b": 2}
+        assert type(result) is dict
+
+    # Rejection tests
+    @pytest.mark.parametrize(
+        ("value", "expected_type_name"),
+        [
+            ("not a dict", "str"),
+            (123, "int"),
+            ([("a", 1)], "list"),
+            (None, "NoneType"),
+            ((("a", 1),), "tuple"),
+        ],
+        ids=["str", "int", "list", "none", "tuple"],
+    )
+    def test_rejects_non_dict(self, value: object, expected_type_name: str) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(dict, value)
+        assert f"expected dict, got {expected_type_name}" in str(exc_info.value)
+
+    def test_rejects_invalid_key_type(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(dict[str, int], {1: 1})
+        assert "expected str, got int" in str(exc_info.value)
+
+    def test_rejects_invalid_value_type(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(dict[str, int], {"a": "not an int"})
+        assert "expected int, got str" in str(exc_info.value)
+
+    def test_rejects_bool_key_for_int_key(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(dict[int, str], {True: "a"})
+        assert "expected int, got bool" in str(exc_info.value)
+
+
+class TestValidateTypedDict:
+    """Tests for TypedDict validation."""
+
+    def test_simple_typed_dict(self) -> None:
+        class User(TypedDict):
+            name: str
+            age: int
+
+        result = validator.validate(User, {"name": "bestie", "age": 25})
+        assert result == {"name": "bestie", "age": 25}
+        assert isinstance(result, dict)
+
+    def test_typed_dict_coerces_values(self) -> None:
+        class Stats(TypedDict):
+            score: float
+            count: float
+
+        result = validator.validate(Stats, {"score": 100, "count": 5})
+        assert result == {"score": 100.0, "count": 5.0}
+        assert all(isinstance(v, float) for v in result.values())
+
+    def test_typed_dict_with_optional_keys(self) -> None:
+        class Config(TypedDict):
+            name: str
+            debug: NotRequired[bool]
+
+        # With optional key present
+        result = validator.validate(Config, {"name": "app", "debug": True})
+        assert result == {"name": "app", "debug": True}
+
+        # Without optional key
+        result = validator.validate(Config, {"name": "app"})
+        assert result == {"name": "app"}
+
+    def test_typed_dict_with_required_keys(self) -> None:
+        class Config(TypedDict, total=False):
+            name: Required[str]
+            debug: bool
+
+        result = validator.validate(Config, {"name": "app"})
+        assert result == {"name": "app"}
+
+    def test_nested_typed_dict(self) -> None:
+        class Address(TypedDict):
+            city: str
+            zip_code: str
+
+        class Person(TypedDict):
+            name: str
+            address: Address
+
+        result = validator.validate(
+            Person, {"name": "bestie", "address": {"city": "NYC", "zip_code": "10001"}}
+        )
+        assert result == {
+            "name": "bestie",
+            "address": {"city": "NYC", "zip_code": "10001"},
+        }
+
+    def test_typed_dict_from_mapping(self) -> None:
+        class User(TypedDict):
+            name: str
+            age: int
+
+        data = collections.OrderedDict([("name", "bestie"), ("age", 25)])
+        result = validator.validate(User, data)
+        assert result == {"name": "bestie", "age": 25}
+        assert type(result) is dict
+
+    # Rejection tests
+    def test_rejects_missing_required_key(self) -> None:
+        class User(TypedDict):
+            name: str
+            age: int
+
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(User, {"name": "bestie"})
+        assert "age" in str(exc_info.value)
+
+    def test_rejects_wrong_value_type(self) -> None:
+        class User(TypedDict):
+            name: str
+            age: int
+
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(User, {"name": "bestie", "age": "twenty five"})
+        assert "expected int, got str" in str(exc_info.value)
+
+    def test_rejects_extra_keys(self) -> None:
+        class User(TypedDict):
+            name: str
+
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(User, {"name": "bestie", "extra": "field"})
+        assert "extra" in str(exc_info.value)
+
+    def test_rejects_non_mapping(self) -> None:
+        class User(TypedDict):
+            name: str
+
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(User, "not a dict")
+        assert "expected User, got str" in str(exc_info.value)
 
 
 class TestValidationError:
