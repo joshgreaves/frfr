@@ -13,7 +13,9 @@ class ValidationError(Exception):
         actual_type = type(actual).__name__
         actual_repr = repr(actual)
         location = f"{path} - " if path else ""
-        message = f"{location}expected {expected.__name__}, got {actual_type} ({actual_repr})"
+        message = (
+            f"{location}expected {expected.__name__}, got {actual_type} ({actual_repr})"
+        )
         super().__init__(message)
 
 
