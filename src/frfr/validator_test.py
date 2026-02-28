@@ -146,6 +146,118 @@ class TestValidateFloat:
         assert f"expected float, got {expected_type_name}" in str(exc_info.value)
 
 
+class TestValidateStr:
+    """Tests for str validation."""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "hello",
+            "",
+            "123",
+            " ",
+            "\U0001f600",
+        ],
+        ids=["simple", "empty", "numeric", "whitespace", "unicode"],
+    )
+    def test_valid_str(self, value: str) -> None:
+        result = validator.validate(str, value)
+        assert result == value
+        assert isinstance(result, str)
+
+    @pytest.mark.parametrize(
+        ("value", "expected_type_name"),
+        [
+            (42, "int"),
+            (3.14, "float"),
+            (True, "bool"),
+            (False, "bool"),
+            (None, "NoneType"),
+            (["a"], "list"),
+            ({"a": 1}, "dict"),
+            (b"hello", "bytes"),
+        ],
+        ids=["int", "float", "true", "false", "none", "list", "dict", "bytes"],
+    )
+    def test_rejects_invalid_types(
+        self, value: object, expected_type_name: str
+    ) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(str, value)
+        assert f"expected str, got {expected_type_name}" in str(exc_info.value)
+
+
+class TestValidateBool:
+    """Tests for bool validation."""
+
+    @pytest.mark.parametrize(
+        "value",
+        [True, False],
+        ids=["true", "false"],
+    )
+    def test_valid_bool(self, value: bool) -> None:
+        result = validator.validate(bool, value)
+        assert result == value
+        assert isinstance(result, bool)
+
+    @pytest.mark.parametrize(
+        ("value", "expected_type_name"),
+        [
+            (1, "int"),
+            (0, "int"),
+            (1.0, "float"),
+            (0.0, "float"),
+            ("true", "str"),
+            ("", "str"),
+            (None, "NoneType"),
+            ([], "list"),
+        ],
+        ids=[
+            "one",
+            "zero",
+            "one_float",
+            "zero_float",
+            "true_str",
+            "empty_str",
+            "none",
+            "empty_list",
+        ],
+    )
+    def test_rejects_invalid_types(
+        self, value: object, expected_type_name: str
+    ) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(bool, value)
+        assert f"expected bool, got {expected_type_name}" in str(exc_info.value)
+
+
+class TestValidateNone:
+    """Tests for None validation."""
+
+    def test_valid_none(self) -> None:
+        result = validator.validate(type(None), None)
+        assert result is None
+
+    @pytest.mark.parametrize(
+        ("value", "expected_type_name"),
+        [
+            (0, "int"),
+            (0.0, "float"),
+            (False, "bool"),
+            ("", "str"),
+            ([], "list"),
+            ({}, "dict"),
+        ],
+        ids=["zero", "zero_float", "false", "empty_str", "empty_list", "empty_dict"],
+    )
+    def test_rejects_invalid_types(
+        self, value: object, expected_type_name: str
+    ) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(type(None), value)
+        assert f"expected NoneType, got {expected_type_name}" in str(exc_info.value)
+
+
 class TestValidationError:
     """Tests for ValidationError formatting."""
 

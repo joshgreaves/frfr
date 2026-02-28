@@ -50,9 +50,11 @@ class Validator:
 
     def _register_builtins(self) -> None:
         """Register built-in handlers. Called during __init__."""
-        # Import here to avoid circular dependency at module level
         self._handlers[int] = parse_int
         self._handlers[float] = parse_float
+        self._handlers[str] = parse_str
+        self._handlers[bool] = parse_bool
+        self._handlers[type(None)] = parse_none
 
     def register[T](self, target: type[T], handler: Handler[T]) -> None:
         """Register a handler for a target type.
@@ -90,9 +92,7 @@ class Validator:
         raise ValidationError(target, data)
 
 
-def parse_int(
-    validator: ValidatorProtocol, target: type[int], data: object
-) -> int:
+def parse_int(validator: ValidatorProtocol, target: type[int], data: object) -> int:
     """Validate that data is an int (not a bool).
 
     Exposed for composition in custom handlers.
@@ -127,6 +127,39 @@ def parse_float(
         return float(data)
 
     raise ValidationError(target, data)
+
+
+def parse_str(validator: ValidatorProtocol, target: type[str], data: object) -> str:
+    """Validate that data is a str.
+
+    Exposed for composition in custom handlers.
+    """
+    if type(data) is not str:
+        raise ValidationError(target, data)
+
+    return data
+
+
+def parse_bool(validator: ValidatorProtocol, target: type[bool], data: object) -> bool:
+    """Validate that data is a bool.
+
+    Exposed for composition in custom handlers.
+    """
+    if type(data) is not bool:
+        raise ValidationError(target, data)
+
+    return data
+
+
+def parse_none(validator: ValidatorProtocol, target: type[None], data: object) -> None:
+    """Validate that data is None.
+
+    Exposed for composition in custom handlers.
+    """
+    if data is not None:
+        raise ValidationError(target, data)
+
+    return None
 
 
 # Private default validator instance (frozen to prevent modification)
