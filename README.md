@@ -1,5 +1,7 @@
 # frfr
 
+[![CI](https://github.com/joshgreaves/frfr/actions/workflows/ci.yml/badge.svg)](https://github.com/joshgreaves/frfr/actions/workflows/ci.yml)
+
 runtime type validation that's actually valid. no cap.
 
 ## what is this
