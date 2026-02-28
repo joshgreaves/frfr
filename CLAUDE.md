@@ -147,3 +147,44 @@ src/frfr/
 ├── validator_test.py # tests
 └── py.typed          # PEP 561 marker
 ```
+
+## Next steps
+
+### Types to implement
+- [ ] `set[T]` - similar to list, coerce from list/tuple
+- [ ] `frozenset[T]` - immutable version
+- [ ] `Literal["a", "b"]` - enum-like string/int validation
+- [ ] `@dataclass` - major use case, construct from dict
+- [ ] `NamedTuple` - similar to dataclass
+
+### API cleanup
+- [ ] Simplify public API: only export `frfr.validate`, `frfr.ValidationError`, `frfr.Validator`
+- [ ] Move parse functions to internal: `from frfr.validator import parse_int` (not `frfr.parse_int`)
+- [ ] Consider renaming `validator.py` → `validation.py` (noun vs adjective vibes)
+
+### Architecture fix
+- [ ] Any, Union, TypedDict are hardcoded in `validate()` method - can't be overridden
+- [ ] Should be registered handlers like everything else, not special-cased
+- [ ] Users creating custom Validators should be able to customize these behaviors
+
+### Testing
+- [ ] Add large-scale integration tests with deeply nested types
+- [ ] Complex type combinations (e.g., `dict[str, list[tuple[int, Optional[str]]]]`)
+- [ ] Edge cases and error message quality tests
+
+### Error messages
+- [ ] Improve error messages with full paths (e.g., `data.users[0].age`)
+- [ ] Currently `ValidationError` has `path` param but handlers don't propagate it
+- [ ] Need to pass path context through recursive validation calls
+
+### Type hints
+- [ ] Fix Union/Any type hint issue - currently using `# type: ignore` in tests
+- [ ] Consider if we can make `validate()` signature accept Union types properly
+- [ ] May need overloads or broader type signature
+
+### Documentation & release
+- [ ] Polish README with more examples
+- [ ] Add CHANGELOG.md
+- [ ] Set up branch protections on main
+- [ ] Configure PyPI publishing (GitHub Actions workflow)
+- [ ] First release to PyPI
