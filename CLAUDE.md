@@ -112,18 +112,31 @@ my_validator.register(int, my_custom_int_handler)
 - `tuple[T, ...]` and `list[T]` are equivalent (both accept JSON arrays)
 - Coercion always produces the target type (list becomes tuple if that's what you asked for)
 
+### Union types - order matters
+- Union types are tried in declaration order; the first matching type wins
+- Coercion rules still apply within each type attempt
+- Example: `Union[float, int]` with `1` → `1.0` (int coerces to float, float wins)
+- Example: `Union[int, float]` with `1` → `1` (int matches first, no coercion needed)
+- Both `Union[A, B]` and `A | B` syntax are supported
+
 ### Always return new objects for mutable containers
 - Mutable containers (list, dict, set) always return a NEW object, never the original
 - This ensures safety: mutations to validated data don't affect the original input
 - Immutable types (int, float, str, bool, None, tuple) can return the original since they can't be mutated
 - Performance tradeoff is acceptable for typical JSON payloads; safety > speed
 
-### Supported types (planned)
-- Primitives: `str`, `int`, `float`, `bool`, `None`
-- Containers: `list`, `dict`, `tuple`, `set`
-- Typing constructs: `Optional`, `Union`, `Literal`, `TypedDict`
-- Classes: `dataclass`, regular classes with `__init__`
+### Supported types
+**Implemented:**
+- Primitives: `str`, `int`, `float`, `bool`, `None`, `Any`
+- Containers: `list[T]`, `dict[K, V]`, `tuple[T, ...]`, `tuple[T1, T2, ...]`
+- Typing constructs: `Union[T1, T2]`, `T | None`, `TypedDict`
 - Generic types: `list[str]`, `dict[str, int]`, etc.
+- Mapping coercion: `OrderedDict`, `MappingProxyType`, etc. → `dict`
+
+**Planned:**
+- `set[T]`, `frozenset[T]`
+- `Literal["a", "b"]`
+- `@dataclass`, `NamedTuple`
 
 ## Project structure
 

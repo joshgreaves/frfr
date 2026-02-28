@@ -1,11 +1,13 @@
 """Core validation logic for frfr."""
 
 import collections.abc
+import types
 
 from typing import (
     Any,
     Callable,
     Protocol,
+    Union,
     cast,
     get_args,
     get_origin,
@@ -24,8 +26,10 @@ class ValidationError(Exception):
         actual_type = type(actual).__name__
         actual_repr = repr(actual)
         location = f"{path} - " if path else ""
+        # Handle Union types and other special forms that don't have __name__
+        expected_name = getattr(expected, "__name__", None) or str(expected)
         message = (
-            f"{location}expected {expected.__name__}, got {actual_type} ({actual_repr})"
+            f"{location}expected {expected_name}, got {actual_type} ({actual_repr})"
         )
         super().__init__(message)
 
@@ -106,6 +110,11 @@ class Validator:
         # Handle TypedDict (detected via is_typeddict)
         if is_typeddict(target):
             return parse_typed_dict(self, target, data)
+
+        # Handle Union types (both typing.Union and types.UnionType)
+        origin = get_origin(target)
+        if origin is Union or isinstance(target, types.UnionType):
+            return cast(T, parse_union(self, target, data))
 
         # Try exact match first
         handler = self._handlers.get(target)
@@ -329,6 +338,32 @@ def parse_typed_dict[T](
         result[key] = validator.validate(value_type, data[key])  # type: ignore[index]
 
     return cast(T, result)
+
+
+def parse_union(validator: ValidatorProtocol, target: type[Any], data: object) -> Any:
+    """Validate that data matches one of the types in the Union.
+
+    Types are tried in declaration order. The first type that successfully
+    validates (including any coercion) wins. This means order matters:
+    - Union[float, int] with 1 -> 1.0 (coerced to float)
+    - Union[int, float] with 1 -> 1 (int matches first)
+
+    Exposed for composition in custom handlers.
+    """
+    args = get_args(target)
+    if not args:
+        # Shouldn't happen for valid Union types, but handle gracefully
+        raise ValidationError(target, data)
+
+    # Try each type in order
+    for union_type in args:
+        try:
+            return validator.validate(union_type, data)
+        except ValidationError:
+            continue
+
+    # None matched - raise error
+    raise ValidationError(target, data)
 
 
 def parse_any(validator: ValidatorProtocol, target: type[Any], data: object) -> Any:

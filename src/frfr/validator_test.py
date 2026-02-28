@@ -4,7 +4,7 @@
 
 import collections
 import types
-from typing import Any, NotRequired, Required, TypedDict
+from typing import Any, NotRequired, Required, TypedDict, Union
 
 import pytest
 
@@ -723,6 +723,135 @@ class TestValidateTypedDict:
         with pytest.raises(validator.ValidationError) as exc_info:
             validator.validate(User, "not a dict")
         assert "expected User, got str" in str(exc_info.value)
+
+
+class TestValidateUnion:
+    """Tests for Union validation.
+
+    Union types are tried in declaration order. The first type that
+    successfully validates (including coercion) wins.
+
+    Note: pyright complains about UnionType not being type[T], but this works
+    at runtime. All validate() calls use pyright: ignore for this reason.
+    """
+
+    # Basic union - Union[A, B] syntax
+    def test_union_first_type_matches(self) -> None:
+        result = validator.validate(Union[int, str], 42)  # type: ignore[arg-type]
+        assert result == 42
+        assert isinstance(result, int)
+
+    def test_union_second_type_matches(self) -> None:
+        result = validator.validate(Union[int, str], "hello")  # type: ignore[arg-type]
+        assert result == "hello"
+        assert isinstance(result, str)
+
+    # Basic union - A | B syntax
+    def test_pipe_union_first_type_matches(self) -> None:
+        result = validator.validate(int | str, 42)  # type: ignore[arg-type]
+        assert result == 42
+        assert isinstance(result, int)
+
+    def test_pipe_union_second_type_matches(self) -> None:
+        result = validator.validate(int | str, "hello")  # type: ignore[arg-type]
+        assert result == "hello"
+        assert isinstance(result, str)
+
+    # Order matters with coercion
+    def test_union_float_int_coerces_to_float(self) -> None:
+        # int coerces to float, so float wins when it comes first
+        result = validator.validate(float | int, 42)  # type: ignore[arg-type]
+        assert result == 42.0
+        assert isinstance(result, float)
+
+    def test_union_int_float_keeps_int(self) -> None:
+        # int comes first and matches exactly, no coercion needed
+        result = validator.validate(int | float, 42)  # type: ignore[arg-type]
+        assert result == 42
+        assert isinstance(result, int)
+
+    def test_union_float_str_coerces_int_to_float(self) -> None:
+        # int isn't in union, but coerces to float
+        result = validator.validate(float | str, 1)  # type: ignore[arg-type]
+        assert result == 1.0
+        assert isinstance(result, float)
+
+    # Union with None (similar to Optional)
+    def test_union_with_none_accepts_value(self) -> None:
+        result = validator.validate(Union[int, None], 42)  # type: ignore[arg-type]
+        assert result == 42
+        assert isinstance(result, int)
+
+    def test_union_with_none_accepts_none(self) -> None:
+        result = validator.validate(Union[int, None], None)  # type: ignore[arg-type]
+        assert result is None
+
+    # Optional[T] using A | None syntax
+    def test_optional_accepts_value(self) -> None:
+        result = validator.validate(int | None, 42)  # type: ignore[arg-type]
+        assert result == 42
+        assert isinstance(result, int)
+
+    def test_optional_accepts_none(self) -> None:
+        result = validator.validate(int | None, None)  # type: ignore[arg-type]
+        assert result is None
+
+    def test_optional_rejects_wrong_type(self) -> None:
+        with pytest.raises(validator.ValidationError):
+            validator.validate(int | None, "not an int")  # type: ignore[arg-type]
+
+    # Optional with coercion
+    def test_optional_float_coerces_int(self) -> None:
+        result = validator.validate(float | None, 42)  # type: ignore[arg-type]
+        assert result == 42.0
+        assert isinstance(result, float)
+
+    # Complex unions
+    def test_union_three_types(self) -> None:
+        result = validator.validate(int | str | list[int], [1, 2, 3])  # type: ignore[arg-type]
+        assert result == [1, 2, 3]
+        assert isinstance(result, list)
+
+    def test_union_with_list(self) -> None:
+        result = validator.validate(str | list[int], [1, 2, 3])  # type: ignore[arg-type]
+        assert result == [1, 2, 3]
+
+    def test_union_with_dict(self) -> None:
+        result = validator.validate(str | dict[str, int], {"a": 1})  # type: ignore[arg-type]
+        assert result == {"a": 1}
+
+    # Nested unions (Python flattens these)
+    def test_nested_union_flattened(self) -> None:
+        # Union[Union[int, str], bool] is flattened to Union[int, str, bool]
+        result = validator.validate(Union[Union[int, str], bool], True)  # type: ignore[arg-type]
+        # bool comes last, but int would reject bool, str would reject bool
+        # so bool should match
+        assert result is True
+        assert isinstance(result, bool)
+
+    # Bool handling in unions
+    def test_union_int_str_rejects_bool(self) -> None:
+        # bool is rejected by int (strict), and rejected by str
+        with pytest.raises(validator.ValidationError):
+            validator.validate(int | str, True)  # type: ignore[arg-type]
+
+    def test_union_with_bool_accepts_bool(self) -> None:
+        result = validator.validate(int | bool, True)  # type: ignore[arg-type]
+        # int rejects bool, so bool matches
+        assert result is True
+        assert isinstance(result, bool)
+
+    # Rejection tests
+    def test_rejects_when_no_type_matches(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(int | str, [1, 2, 3])  # type: ignore[arg-type]
+        # Error message format may vary
+        error_msg = str(exc_info.value)
+        assert "int" in error_msg or "str" in error_msg
+
+    def test_rejects_none_when_not_in_union(self) -> None:
+        with pytest.raises(validator.ValidationError):
+            validator.validate(int | str, None)  # type: ignore[arg-type]
 
 
 class TestValidationError:

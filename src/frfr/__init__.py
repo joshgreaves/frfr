@@ -13,6 +13,7 @@ from frfr.validator import parse_none
 from frfr.validator import parse_str
 from frfr.validator import parse_tuple
 from frfr.validator import parse_typed_dict
+from frfr.validator import parse_union
 from frfr.validator import validate
 
 __all__ = [
@@ -29,5 +30,6 @@ __all__ = [
     "parse_str",
     "parse_tuple",
     "parse_typed_dict",
+    "parse_union",
     "validate",
 ]
