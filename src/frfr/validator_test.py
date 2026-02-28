@@ -385,6 +385,118 @@ class TestValidateList:
         assert "expected int, got bool" in str(exc_info.value)
 
 
+class TestValidateTuple:
+    """Tests for tuple validation."""
+
+    # Unparameterized tuple
+    def test_unparameterized_tuple(self) -> None:
+        result = validator.validate(tuple, (1, "two", 3.0))
+        assert result == (1, "two", 3.0)
+        assert isinstance(result, tuple)
+
+    def test_empty_tuple(self) -> None:
+        result = validator.validate(tuple, ())
+        assert result == ()
+        assert isinstance(result, tuple)
+
+    # List coercion
+    def test_list_coerces_to_tuple(self) -> None:
+        result = validator.validate(tuple, [1, 2, 3])
+        assert result == (1, 2, 3)
+        assert isinstance(result, tuple)
+
+    # Homogeneous tuple[T, ...]
+    def test_homogeneous_tuple(self) -> None:
+        result = validator.validate(tuple[int, ...], (1, 2, 3))
+        assert result == (1, 2, 3)
+        assert isinstance(result, tuple)
+        assert all(isinstance(x, int) for x in result)
+
+    def test_homogeneous_tuple_empty(self) -> None:
+        result = validator.validate(tuple[int, ...], ())
+        assert result == ()
+        assert isinstance(result, tuple)
+
+    def test_homogeneous_tuple_coerces_elements(self) -> None:
+        result = validator.validate(tuple[float, ...], (1, 2, 3))
+        assert result == (1.0, 2.0, 3.0)
+        assert all(isinstance(x, float) for x in result)
+
+    def test_homogeneous_tuple_from_list(self) -> None:
+        result = validator.validate(tuple[int, ...], [1, 2, 3])
+        assert result == (1, 2, 3)
+        assert isinstance(result, tuple)
+
+    # Fixed-length tuple[T1, T2, ...]
+    def test_fixed_tuple(self) -> None:
+        result = validator.validate(tuple[int, str, bool], (1, "two", True))
+        assert result == (1, "two", True)
+        assert isinstance(result, tuple)
+
+    def test_fixed_tuple_single_element(self) -> None:
+        result = validator.validate(tuple[int], (42,))
+        assert result == (42,)
+        assert isinstance(result, tuple)
+
+    def test_fixed_tuple_coerces_elements(self) -> None:
+        result = validator.validate(tuple[float, float], (1, 2))
+        assert result == (1.0, 2.0)
+        assert all(isinstance(x, float) for x in result)
+
+    def test_fixed_tuple_from_list(self) -> None:
+        result = validator.validate(tuple[int, str], [1, "two"])
+        assert result == (1, "two")
+        assert isinstance(result, tuple)
+
+    # Nested tuples
+    def test_nested_tuple(self) -> None:
+        result = validator.validate(tuple[tuple[int, ...], ...], ((1, 2), (3, 4)))
+        assert result == ((1, 2), (3, 4))
+        assert isinstance(result, tuple)
+        assert all(isinstance(inner, tuple) for inner in result)
+
+    # Rejection tests
+    @pytest.mark.parametrize(
+        ("value", "expected_type_name"),
+        [
+            ("not a tuple", "str"),
+            (123, "int"),
+            ({"a": 1}, "dict"),
+            (None, "NoneType"),
+        ],
+        ids=["str", "int", "dict", "none"],
+    )
+    def test_rejects_non_tuple(self, value: object, expected_type_name: str) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(tuple, value)
+        assert f"expected tuple, got {expected_type_name}" in str(exc_info.value)
+
+    def test_rejects_invalid_element_in_homogeneous(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(tuple[int, ...], (1, 2, "three"))
+        assert "expected int, got str" in str(exc_info.value)
+
+    def test_rejects_wrong_length_fixed_tuple(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(tuple[int, str], (1, "two", 3))
+        assert "expected tuple" in str(exc_info.value)
+
+    def test_rejects_too_short_fixed_tuple(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(tuple[int, str, bool], (1, "two"))
+        assert "expected tuple" in str(exc_info.value)
+
+    def test_rejects_invalid_element_in_fixed_tuple(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(tuple[int, str], (1, 2))
+        assert "expected str, got int" in str(exc_info.value)
+
+    def test_rejects_bool_in_int_tuple(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(tuple[int, ...], (1, True, 3))
+        assert "expected int, got bool" in str(exc_info.value)
+
+
 class TestValidationError:
     """Tests for ValidationError formatting."""
 

@@ -56,6 +56,7 @@ class Validator:
         self._handlers[bool] = parse_bool
         self._handlers[type(None)] = parse_none
         self._handlers[list] = parse_list
+        self._handlers[tuple] = parse_tuple
 
     def register[T](self, target: type[T], handler: Handler[T]) -> None:
         """Register a handler for a target type.
@@ -200,6 +201,43 @@ def parse_list[T](
     # Validate each element against the element type
     element_type = args[0]
     return [validator.validate(element_type, item) for item in data]
+
+
+def parse_tuple[*Ts](
+    validator: ValidatorProtocol, target: type[tuple[*Ts]], data: object
+) -> tuple[*Ts]:
+    """Validate that data is a tuple or list, optionally validating elements.
+
+    Accepts both tuple and list (coerces list to tuple).
+    For `tuple` (unparameterized): accepts any tuple/list.
+    For `tuple[T, ...]`: validates each element against T (homogeneous).
+    For `tuple[T1, T2, ...]`: validates each element against its positional type.
+
+    Exposed for composition in custom handlers.
+    """
+    if not isinstance(data, (list, tuple)):
+        raise ValidationError(target, data)
+
+    args = get_args(target)
+    if not args:
+        # Unparameterized tuple, just convert
+        return cast(tuple[*Ts], tuple(data))
+
+    # Check for homogeneous tuple[T, ...] - indicated by Ellipsis as second arg
+    if len(args) == 2 and args[1] is Ellipsis:
+        element_type = args[0]
+        return cast(
+            tuple[*Ts], tuple(validator.validate(element_type, item) for item in data)
+        )
+
+    # Fixed-length tuple[T1, T2, ...] - validate length and each element
+    if len(data) != len(args):
+        raise ValidationError(target, data)
+
+    return cast(
+        tuple[*Ts],
+        tuple(validator.validate(t, item) for t, item in zip(args, data, strict=True)),
+    )
 
 
 def parse_any(validator: ValidatorProtocol, target: type[Any], data: object) -> Any:

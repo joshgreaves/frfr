@@ -9,6 +9,7 @@ from frfr.validator import parse_float
 from frfr.validator import parse_int
 from frfr.validator import parse_list
 from frfr.validator import parse_none
+from frfr.validator import parse_tuple
 from frfr.validator import parse_str
 from frfr.validator import validate
 
@@ -23,5 +24,6 @@ __all__ = [
     "parse_list",
     "parse_none",
     "parse_str",
+    "parse_tuple",
     "validate",
 ]
