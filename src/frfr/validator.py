@@ -41,6 +41,10 @@ def _validate_impl[T](target: type[T], data: object, path: str) -> T:
     if target is int:
         return typing.cast(T, _validate_int(data, path))
 
+    # Handle float (with int coercion)
+    if target is float:
+        return typing.cast(T, _validate_float(data, path))
+
     raise ValidationError(target, data, path)
 
 
@@ -54,3 +58,20 @@ def _validate_int(data: object, path: str) -> int:
         raise ValidationError(int, data, path)
 
     return data
+
+
+def _validate_float(data: object, path: str) -> float:
+    """Validate that data is a float, or coerce from int."""
+    # Reject bool explicitly
+    if type(data) is bool:
+        raise ValidationError(float, data, path)
+
+    # Accept float directly
+    if type(data) is float:
+        return data
+
+    # Coerce int to float (lossless widening)
+    if type(data) is int:
+        return float(data)
+
+    raise ValidationError(float, data, path)
