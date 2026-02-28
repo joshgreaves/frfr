@@ -30,6 +30,75 @@ uv run pyright                  # type check
 uv run pytest                   # run tests
 ```
 
+## Architecture
+
+### Handler pattern
+
+Each target type has a handler: `Callable[[ValidatorProtocol, type[T], object], T]`
+
+```python
+def parse_int(
+    validator: ValidatorProtocol, target: type[int], data: object
+) -> int:
+    if type(data) is bool:
+        raise ValidationError(target, data)
+    if type(data) is int:
+        return data
+    raise ValidationError(target, data)
+```
+
+Handlers receive:
+1. `validator` - enables recursive validation for nested types (e.g., `list[int]`)
+2. `target` - the full target type (important for generics like `list[str]`)
+3. `data` - the data to validate
+
+### ValidatorProtocol
+
+Protocol with just `validate()` method. Used in handler type signatures:
+
+```python
+class ValidatorProtocol(Protocol):
+    def validate[T](self, target: type[T], data: object) -> T: ...
+```
+
+### Validator class
+
+Concrete implementation with handler registration:
+
+```python
+class Validator:
+    def __init__(self, *, frozen: bool = False) -> None:
+        self._handlers: dict[type, Handler] = {}
+        self._frozen = frozen
+        self._register_builtins()  # all validators start with built-ins
+
+    def register(self, target: type[T], handler: Handler[T]) -> None:
+        if self._frozen:
+            raise RuntimeError("Cannot register on a frozen validator")
+        self._handlers[target] = handler
+
+    def validate(self, target: type[T], data: object) -> T:
+        handler = self._handlers.get(target)
+        if handler:
+            return handler(self, target, data)
+        raise ValidationError(target, data)
+```
+
+### Module API
+
+- `frfr.validate()` - uses a private frozen `Validator` instance
+- `frfr.Validator` - class for custom instances (comes with built-in handlers)
+- `frfr.ValidatorProtocol` - protocol for handler type signatures
+- `frfr.ValidationError` - exception raised on validation failure
+- `frfr.parse_int`, `frfr.parse_float`, etc. - exposed handlers for composition
+
+Users cannot register on the default validator (it's frozen). They create their own:
+
+```python
+my_validator = frfr.Validator()
+my_validator.register(int, my_custom_int_handler)
+```
+
 ## Design decisions
 
 ### Strict type validation
@@ -53,7 +122,8 @@ uv run pytest                   # run tests
 
 ```
 src/frfr/
-├── __init__.py      # public API (validate function)
-├── _validators.py   # validation logic
-└── *_test.py        # tests alongside source
+├── __init__.py       # public API exports
+├── validator.py      # Validator class, handlers, validate()
+├── validator_test.py # tests
+└── py.typed          # PEP 561 marker
 ```

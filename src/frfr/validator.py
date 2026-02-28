@@ -19,8 +19,125 @@ class ValidationError(Exception):
         super().__init__(message)
 
 
+class ValidatorProtocol(typing.Protocol):
+    """Protocol for validators. Used in handler type signatures."""
+
+    def validate[T](self, target: type[T], data: object) -> T:
+        """Validate and coerce data to the given type."""
+        ...
+
+
+# Type alias for handler functions.
+# Handlers receive a ValidatorProtocol to enable recursive validation.
+type Handler[T] = typing.Callable[[ValidatorProtocol, type[T], object], T]
+
+
+class Validator:
+    """Type validator with extensible handlers.
+
+    Handlers receive the validator instance to enable recursive validation
+    of nested types (e.g., list[int] needs to validate each element).
+
+    All validators start with built-in handlers for standard types.
+    Use `frozen=True` to prevent further registration (used internally
+    for the default validator).
+    """
+
+    def __init__(self, *, frozen: bool = False) -> None:
+        self._handlers: dict[type, Handler[typing.Any]] = {}
+        self._frozen = frozen
+        self._register_builtins()
+
+    def _register_builtins(self) -> None:
+        """Register built-in handlers. Called during __init__."""
+        # Import here to avoid circular dependency at module level
+        self._handlers[int] = parse_int
+        self._handlers[float] = parse_float
+
+    def register[T](self, target: type[T], handler: Handler[T]) -> None:
+        """Register a handler for a target type.
+
+        Args:
+            target: The type to register a handler for.
+            handler: A function that takes (validator, target_type, data) and
+                     returns a validated/coerced instance of target_type.
+                     The validator is passed to enable recursive validation.
+
+        Raises:
+            RuntimeError: If the validator is frozen.
+        """
+        if self._frozen:
+            raise RuntimeError("Cannot register on a frozen validator")
+        self._handlers[target] = handler
+
+    def validate[T](self, target: type[T], data: object) -> T:
+        """Validate and coerce data to the given type.
+
+        Args:
+            target: The type to validate against.
+            data: The data to validate.
+
+        Returns:
+            The validated data, coerced to the target type if needed.
+
+        Raises:
+            ValidationError: If the data does not match the expected type.
+        """
+        handler = self._handlers.get(target)
+        if handler is not None:
+            return typing.cast(T, handler(self, target, data))
+
+        raise ValidationError(target, data)
+
+
+def parse_int(
+    validator: ValidatorProtocol, target: type[int], data: object
+) -> int:
+    """Validate that data is an int (not a bool).
+
+    Exposed for composition in custom handlers.
+    """
+    # Reject bool explicitly - even though bool is a subclass of int
+    if type(data) is bool:
+        raise ValidationError(target, data)
+
+    if type(data) is not int:
+        raise ValidationError(target, data)
+
+    return data
+
+
+def parse_float(
+    validator: ValidatorProtocol, target: type[float], data: object
+) -> float:
+    """Validate that data is a float, or coerce from int.
+
+    Exposed for composition in custom handlers.
+    """
+    # Reject bool explicitly
+    if type(data) is bool:
+        raise ValidationError(target, data)
+
+    # Accept float directly
+    if type(data) is float:
+        return data
+
+    # Coerce int to float (lossless widening)
+    if type(data) is int:
+        return float(data)
+
+    raise ValidationError(target, data)
+
+
+# Private default validator instance (frozen to prevent modification)
+_DEFAULT_VALIDATOR = Validator(frozen=True)
+
+
 def validate[T](target: type[T], data: object) -> T:
     """Validate and coerce data to the given type.
+
+    This is the main entry point for frfr. Uses the default validator
+    with built-in handlers for standard types.
 
     Args:
         target: The type to validate against.
@@ -32,46 +149,4 @@ def validate[T](target: type[T], data: object) -> T:
     Raises:
         ValidationError: If the data does not match the expected type.
     """
-    return _validate_impl(target, data, path="")
-
-
-def _validate_impl[T](target: type[T], data: object, path: str) -> T:
-    """Internal validation implementation with path tracking."""
-    # Handle int (with explicit bool rejection)
-    if target is int:
-        return typing.cast(T, _validate_int(data, path))
-
-    # Handle float (with int coercion)
-    if target is float:
-        return typing.cast(T, _validate_float(data, path))
-
-    raise ValidationError(target, data, path)
-
-
-def _validate_int(data: object, path: str) -> int:
-    """Validate that data is an int (not a bool)."""
-    # Reject bool explicitly - even though bool is a subclass of int
-    if type(data) is bool:
-        raise ValidationError(int, data, path)
-
-    if type(data) is not int:
-        raise ValidationError(int, data, path)
-
-    return data
-
-
-def _validate_float(data: object, path: str) -> float:
-    """Validate that data is a float, or coerce from int."""
-    # Reject bool explicitly
-    if type(data) is bool:
-        raise ValidationError(float, data, path)
-
-    # Accept float directly
-    if type(data) is float:
-        return data
-
-    # Coerce int to float (lossless widening)
-    if type(data) is int:
-        return float(data)
-
-    raise ValidationError(float, data, path)
+    return _DEFAULT_VALIDATOR.validate(target, data)

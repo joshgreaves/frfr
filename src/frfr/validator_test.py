@@ -1,5 +1,7 @@
 """Tests for the core validation logic."""
 
+# TODO: Add tests for custom Validator instances (register, override handlers, composition)
+
 import pytest
 
 from frfr import validator

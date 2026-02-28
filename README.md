@@ -93,6 +93,57 @@ no cryptic stack traces. no guessing. just facts.
 3. **one function** - `validate()` does everything
 4. **no magic** - explicit is better than implicit
 
+## extending frfr
+
+need custom validation? create your own `Validator` instance and register handlers.
+
+```python
+import frfr
+
+# create a custom validator (comes with built-in handlers)
+my_validator = frfr.Validator()
+
+# register a handler for your type
+class UserId:
+    def __init__(self, value: int) -> None:
+        self.value = value
+
+def parse_user_id(
+    validator: frfr.ValidatorProtocol, target: type[UserId], data: object
+) -> UserId:
+    if isinstance(data, int) and data > 0:
+        return UserId(data)
+    raise frfr.ValidationError(target, data)
+
+my_validator.register(UserId, parse_user_id)
+my_validator.validate(UserId, 42)  # UserId(value=42)
+```
+
+handlers receive the validator as the first arg - this enables recursive validation for nested types like `list[UserId]`.
+
+### override built-in behavior
+
+want different coercion rules? compose with the exposed handlers.
+
+```python
+import frfr
+
+my_validator = frfr.Validator()
+
+# allow float -> int coercion (frfr is strict by default)
+def lenient_int(
+    validator: frfr.ValidatorProtocol, target: type[int], data: object
+) -> int:
+    if isinstance(data, float) and data.is_integer():
+        return int(data)
+    return frfr.parse_int(validator, target, data)  # fall back to default
+
+my_validator.register(int, lenient_int)
+my_validator.validate(int, 1.0)  # 1
+```
+
+the default `frfr.validate()` stays untouched - your custom validator is isolated.
+
 ## contributing
 
 see [CONTRIBUTING.md](CONTRIBUTING.md). we'd love to have you.
