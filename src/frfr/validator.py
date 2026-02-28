@@ -55,6 +55,7 @@ class Validator:
         self._handlers[str] = parse_str
         self._handlers[bool] = parse_bool
         self._handlers[type(None)] = parse_none
+        self._handlers[list] = parse_list
 
     def register[T](self, target: type[T], handler: Handler[T]) -> None:
         """Register a handler for a target type.
@@ -85,9 +86,17 @@ class Validator:
         Raises:
             ValidationError: If the data does not match the expected type.
         """
+        # Try exact match first
         handler = self._handlers.get(target)
         if handler is not None:
             return typing.cast(T, handler(self, target, data))
+
+        # For generic types like list[int], try the origin type (list)
+        origin = typing.get_origin(target)
+        if origin is not None:
+            handler = self._handlers.get(origin)
+            if handler is not None:
+                return typing.cast(T, handler(self, target, data))
 
         raise ValidationError(target, data)
 
@@ -160,6 +169,33 @@ def parse_none(validator: ValidatorProtocol, target: type[None], data: object) -
         raise ValidationError(target, data)
 
     return None
+
+
+def parse_list[T](
+    validator: ValidatorProtocol, target: type[list[T]], data: object
+) -> list[T]:
+    """Validate that data is a list or tuple, optionally validating elements.
+
+    Accepts both list and tuple (coerces tuple to list).
+    For `list` (unparameterized): accepts any list/tuple.
+    For `list[T]`: validates each element against T.
+
+    Always returns a new list (mutable containers are always copied).
+
+    Exposed for composition in custom handlers.
+    """
+    if not isinstance(data, (list, tuple)):
+        raise ValidationError(target, data)
+
+    # Check if parameterized (e.g., list[int] vs plain list)
+    args = typing.get_args(target)
+    if not args:
+        # Unparameterized list, return a shallow copy
+        return list(data)
+
+    # Validate each element against the element type
+    element_type = args[0]
+    return [validator.validate(element_type, item) for item in data]
 
 
 # Private default validator instance (frozen to prevent modification)

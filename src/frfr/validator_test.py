@@ -258,6 +258,107 @@ class TestValidateNone:
         assert f"expected NoneType, got {expected_type_name}" in str(exc_info.value)
 
 
+class TestValidateList:
+    """Tests for list validation."""
+
+    # Unparameterized list
+    def test_unparameterized_list(self) -> None:
+        result = validator.validate(list, [1, "two", 3.0])
+        assert result == [1, "two", 3.0]
+        assert isinstance(result, list)
+
+    def test_empty_list(self) -> None:
+        result = validator.validate(list, [])
+        assert result == []
+        assert isinstance(result, list)
+
+    # Always returns new object (mutable containers are copied)
+    def test_returns_new_list_unparameterized(self) -> None:
+        original = [1, 2, 3]
+        result = validator.validate(list, original)
+        assert result == original
+        assert result is not original
+
+    def test_returns_new_list_parameterized(self) -> None:
+        original = [1, 2, 3]
+        result = validator.validate(list[int], original)
+        assert result == original
+        assert result is not original
+
+    # Parameterized list[T]
+    def test_list_of_int(self) -> None:
+        result = validator.validate(list[int], [1, 2, 3])
+        assert result == [1, 2, 3]
+        assert isinstance(result, list)
+        assert all(isinstance(x, int) for x in result)
+
+    def test_list_of_str(self) -> None:
+        result = validator.validate(list[str], ["a", "b", "c"])
+        assert result == ["a", "b", "c"]
+        assert isinstance(result, list)
+
+    def test_empty_parameterized_list(self) -> None:
+        result = validator.validate(list[int], [])
+        assert result == []
+        assert isinstance(result, list)
+
+    # Coercion within elements
+    def test_list_of_float_coerces_int(self) -> None:
+        result = validator.validate(list[float], [1, 2, 3])
+        assert result == [1.0, 2.0, 3.0]
+        assert all(isinstance(x, float) for x in result)
+
+    # Nested lists
+    def test_nested_list(self) -> None:
+        result = validator.validate(list[list[int]], [[1, 2], [3, 4]])
+        assert result == [[1, 2], [3, 4]]
+        assert isinstance(result, list)
+        assert all(isinstance(inner, list) for inner in result)
+
+    # Tuple coercion
+    def test_tuple_coerces_to_list(self) -> None:
+        result = validator.validate(list, (1, 2, 3))
+        assert result == [1, 2, 3]
+        assert isinstance(result, list)
+
+    def test_tuple_coerces_to_parameterized_list(self) -> None:
+        result = validator.validate(list[int], (1, 2, 3))
+        assert result == [1, 2, 3]
+        assert isinstance(result, list)
+
+    def test_nested_tuple_coerces_to_list(self) -> None:
+        result = validator.validate(list[list[int]], [(1, 2), (3, 4)])
+        assert result == [[1, 2], [3, 4]]
+        assert isinstance(result, list)
+        assert all(isinstance(inner, list) for inner in result)
+
+    # Rejection tests
+    @pytest.mark.parametrize(
+        ("value", "expected_type_name"),
+        [
+            ("not a list", "str"),
+            (123, "int"),
+            ({"a": 1}, "dict"),
+            (None, "NoneType"),
+        ],
+        ids=["str", "int", "dict", "none"],
+    )
+    def test_rejects_non_list(self, value: object, expected_type_name: str) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(list, value)
+        assert f"expected list, got {expected_type_name}" in str(exc_info.value)
+
+    def test_rejects_invalid_element_type(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(list[int], [1, 2, "three"])
+        assert "expected int, got str" in str(exc_info.value)
+
+    def test_rejects_bool_in_int_list(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(list[int], [1, True, 3])
+        assert "expected int, got bool" in str(exc_info.value)
+
+
 class TestValidationError:
     """Tests for ValidationError formatting."""
 

@@ -111,6 +111,12 @@ my_validator.register(int, my_custom_int_handler)
 - `tuple[T, ...]` and `list[T]` are equivalent (both accept JSON arrays)
 - Coercion always produces the target type (list becomes tuple if that's what you asked for)
 
+### Always return new objects for mutable containers
+- Mutable containers (list, dict, set) always return a NEW object, never the original
+- This ensures safety: mutations to validated data don't affect the original input
+- Immutable types (int, float, str, bool, None, tuple) can return the original since they can't be mutated
+- Performance tradeoff is acceptable for typical JSON payloads; safety > speed
+
 ### Supported types (planned)
 - Primitives: `str`, `int`, `float`, `bool`, `None`
 - Containers: `list`, `dict`, `tuple`, `set`
