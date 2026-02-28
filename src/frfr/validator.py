@@ -1,6 +1,6 @@
 """Core validation logic for frfr."""
 
-import typing
+from typing import Any, Callable, Protocol, cast, get_args, get_origin
 
 
 class ValidationError(Exception):
@@ -19,7 +19,7 @@ class ValidationError(Exception):
         super().__init__(message)
 
 
-class ValidatorProtocol(typing.Protocol):
+class ValidatorProtocol(Protocol):
     """Protocol for validators. Used in handler type signatures."""
 
     def validate[T](self, target: type[T], data: object) -> T:
@@ -29,7 +29,7 @@ class ValidatorProtocol(typing.Protocol):
 
 # Type alias for handler functions.
 # Handlers receive a ValidatorProtocol to enable recursive validation.
-type Handler[T] = typing.Callable[[ValidatorProtocol, type[T], object], T]
+type Handler[T] = Callable[[ValidatorProtocol, type[T], object], T]
 
 
 class Validator:
@@ -44,7 +44,7 @@ class Validator:
     """
 
     def __init__(self, *, frozen: bool = False) -> None:
-        self._handlers: dict[type, Handler[typing.Any]] = {}
+        self._handlers: dict[type, Handler[Any]] = {}
         self._frozen = frozen
         self._register_builtins()
 
@@ -86,17 +86,21 @@ class Validator:
         Raises:
             ValidationError: If the data does not match the expected type.
         """
+        # Handle Any explicitly (special form, not a regular type)
+        if target is Any:
+            return cast(T, data)
+
         # Try exact match first
         handler = self._handlers.get(target)
         if handler is not None:
-            return typing.cast(T, handler(self, target, data))
+            return cast(T, handler(self, target, data))
 
         # For generic types like list[int], try the origin type (list)
-        origin = typing.get_origin(target)
+        origin = get_origin(target)
         if origin is not None:
             handler = self._handlers.get(origin)
             if handler is not None:
-                return typing.cast(T, handler(self, target, data))
+                return cast(T, handler(self, target, data))
 
         raise ValidationError(target, data)
 
@@ -188,14 +192,22 @@ def parse_list[T](
         raise ValidationError(target, data)
 
     # Check if parameterized (e.g., list[int] vs plain list)
-    args = typing.get_args(target)
+    args = get_args(target)
     if not args:
         # Unparameterized list, return a shallow copy
-        return list(data)
+        return cast(list[T], list(data))
 
     # Validate each element against the element type
     element_type = args[0]
     return [validator.validate(element_type, item) for item in data]
+
+
+def parse_any(validator: ValidatorProtocol, target: type[Any], data: object) -> Any:
+    """Accept any data without validation.
+
+    Exposed for composition in custom handlers.
+    """
+    return data
 
 
 # Private default validator instance (frozen to prevent modification)

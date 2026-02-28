@@ -16,6 +16,7 @@ That's it. Pass a type and some data, get back a validated and coerced instance 
 
 - Follow [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html)
 - Import modules, not classes or functions: `import os` not `from os import path`
+- Exception: `typing` imports can use `from typing import Any, Protocol, ...`
 - Use `ruff` for formatting
 - Use `ty` and `pyright` for type checking
 - Tests live alongside source: `src/frfr/mymodule.py` → `src/frfr/mymodule_test.py`

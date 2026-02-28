@@ -3,6 +3,7 @@
 from frfr.validator import ValidationError
 from frfr.validator import Validator
 from frfr.validator import ValidatorProtocol
+from frfr.validator import parse_any
 from frfr.validator import parse_bool
 from frfr.validator import parse_float
 from frfr.validator import parse_int
@@ -15,6 +16,7 @@ __all__ = [
     "ValidationError",
     "Validator",
     "ValidatorProtocol",
+    "parse_any",
     "parse_bool",
     "parse_float",
     "parse_int",

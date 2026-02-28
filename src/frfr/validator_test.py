@@ -2,6 +2,8 @@
 
 # TODO: Add tests for custom Validator instances (register, override handlers, composition)
 
+from typing import Any
+
 import pytest
 
 from frfr import validator
@@ -256,6 +258,30 @@ class TestValidateNone:
         with pytest.raises(validator.ValidationError) as exc_info:
             validator.validate(type(None), value)
         assert f"expected NoneType, got {expected_type_name}" in str(exc_info.value)
+
+
+class TestValidateAny:
+    """Tests for Any validation."""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            42,
+            3.14,
+            "hello",
+            True,
+            None,
+            [1, 2, 3],
+            {"key": "value"},
+            (1, 2),
+        ],
+        ids=["int", "float", "str", "bool", "none", "list", "dict", "tuple"],
+    )
+    def test_accepts_any_type(self, value: object) -> None:
+        # Any is a special form, not a type - pyright doesn't like it as type[T].
+        # This is an unlikely use-case anyway; nobody validates against Any in practice.
+        result = validator.validate(Any, value)  # pyright: ignore[reportArgumentType]
+        assert result is value  # Returns the exact same object
 
 
 class TestValidateList:
