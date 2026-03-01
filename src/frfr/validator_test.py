@@ -3,12 +3,86 @@
 # TODO: Add tests for custom Validator instances (register, override handlers, composition)
 
 import collections
+import dataclasses
 import types
 from typing import Any, Literal, NotRequired, Required, TypedDict, Union
 
 import pytest
 
 from frfr import validator
+
+
+# ---------------------------------------------------------------------------
+# Shared data structures used across multiple test classes.
+# Named with type suffix so dataclass/TypedDict pairs are easy to compare.
+# ---------------------------------------------------------------------------
+
+
+class UserTypedDict(TypedDict):
+    name: str
+    age: int
+
+
+class StatsTypedDict(TypedDict):
+    score: float
+    count: float
+
+
+class ConfigTypedDict(TypedDict):
+    name: str
+    debug: NotRequired[bool]
+
+
+class ConfigTotalFalseTypedDict(TypedDict, total=False):
+    name: Required[str]
+    debug: bool
+
+
+class AddressTypedDict(TypedDict):
+    city: str
+    zip_code: str
+
+
+class PersonTypedDict(TypedDict):
+    name: str
+    address: AddressTypedDict
+
+
+@dataclasses.dataclass
+class UserDataclass:
+    name: str
+    age: int
+
+
+@dataclasses.dataclass
+class StatsDataclass:
+    score: float
+    count: float
+
+
+@dataclasses.dataclass
+class AddressDataclass:
+    city: str
+    zip_code: str
+
+
+@dataclasses.dataclass
+class PersonDataclass:
+    name: str
+    address: AddressDataclass
+
+
+@dataclasses.dataclass
+class UserWithDefaultsDataclass:
+    name: str
+    age: int = 0
+    active: bool = True
+
+
+@dataclasses.dataclass
+class UserWithFactoryDataclass:
+    name: str
+    tags: list[str] = dataclasses.field(default_factory=list)
 
 
 class TestValidateInt:
@@ -624,55 +698,32 @@ class TestValidateTypedDict:
     """Tests for TypedDict validation."""
 
     def test_simple_typed_dict(self) -> None:
-        class User(TypedDict):
-            name: str
-            age: int
-
-        result = validator.validate(User, {"name": "bestie", "age": 25})
+        result = validator.validate(UserTypedDict, {"name": "bestie", "age": 25})
         assert result == {"name": "bestie", "age": 25}
         assert isinstance(result, dict)
 
     def test_typed_dict_coerces_values(self) -> None:
-        class Stats(TypedDict):
-            score: float
-            count: float
-
-        result = validator.validate(Stats, {"score": 100, "count": 5})
+        result = validator.validate(StatsTypedDict, {"score": 100, "count": 5})
         assert result == {"score": 100.0, "count": 5.0}
         assert all(isinstance(v, float) for v in result.values())
 
     def test_typed_dict_with_optional_keys(self) -> None:
-        class Config(TypedDict):
-            name: str
-            debug: NotRequired[bool]
-
         # With optional key present
-        result = validator.validate(Config, {"name": "app", "debug": True})
+        result = validator.validate(ConfigTypedDict, {"name": "app", "debug": True})
         assert result == {"name": "app", "debug": True}
 
         # Without optional key
-        result = validator.validate(Config, {"name": "app"})
+        result = validator.validate(ConfigTypedDict, {"name": "app"})
         assert result == {"name": "app"}
 
     def test_typed_dict_with_required_keys(self) -> None:
-        class Config(TypedDict, total=False):
-            name: Required[str]
-            debug: bool
-
-        result = validator.validate(Config, {"name": "app"})
+        result = validator.validate(ConfigTotalFalseTypedDict, {"name": "app"})
         assert result == {"name": "app"}
 
     def test_nested_typed_dict(self) -> None:
-        class Address(TypedDict):
-            city: str
-            zip_code: str
-
-        class Person(TypedDict):
-            name: str
-            address: Address
-
         result = validator.validate(
-            Person, {"name": "bestie", "address": {"city": "NYC", "zip_code": "10001"}}
+            PersonTypedDict,
+            {"name": "bestie", "address": {"city": "NYC", "zip_code": "10001"}},
         )
         assert result == {
             "name": "bestie",
@@ -680,49 +731,31 @@ class TestValidateTypedDict:
         }
 
     def test_typed_dict_from_mapping(self) -> None:
-        class User(TypedDict):
-            name: str
-            age: int
-
         data = collections.OrderedDict([("name", "bestie"), ("age", 25)])
-        result = validator.validate(User, data)
+        result = validator.validate(UserTypedDict, data)
         assert result == {"name": "bestie", "age": 25}
         assert type(result) is dict
 
     # Rejection tests
     def test_rejects_missing_required_key(self) -> None:
-        class User(TypedDict):
-            name: str
-            age: int
-
         with pytest.raises(validator.ValidationError) as exc_info:
-            validator.validate(User, {"name": "bestie"})
+            validator.validate(UserTypedDict, {"name": "bestie"})
         assert "age" in str(exc_info.value)
 
     def test_rejects_wrong_value_type(self) -> None:
-        class User(TypedDict):
-            name: str
-            age: int
-
         with pytest.raises(validator.ValidationError) as exc_info:
-            validator.validate(User, {"name": "bestie", "age": "twenty five"})
+            validator.validate(UserTypedDict, {"name": "bestie", "age": "twenty five"})
         assert "expected int, got str" in str(exc_info.value)
 
     def test_rejects_extra_keys(self) -> None:
-        class User(TypedDict):
-            name: str
-
         with pytest.raises(validator.ValidationError) as exc_info:
-            validator.validate(User, {"name": "bestie", "extra": "field"})
+            validator.validate(UserTypedDict, {"name": "bestie", "extra": "field"})
         assert "extra" in str(exc_info.value)
 
     def test_rejects_non_mapping(self) -> None:
-        class User(TypedDict):
-            name: str
-
         with pytest.raises(validator.ValidationError) as exc_info:
-            validator.validate(User, "not a dict")
-        assert "expected User, got str" in str(exc_info.value)
+            validator.validate(UserTypedDict, "not a dict")
+        assert "expected UserTypedDict, got str" in str(exc_info.value)
 
 
 class TestValidateUnion:
@@ -1111,6 +1144,121 @@ class TestValidateLiteral:
     def test_rejects_none_when_not_in_literal(self) -> None:
         with pytest.raises(validator.ValidationError):
             validator.validate(Literal["a", "b"], None)  # type: ignore[arg-type]
+
+
+class TestValidateDataclass:
+    """Tests for dataclass validation.
+
+    Dataclasses and dicts/Mappings are considered equivalent:
+    - validate(MyDataclass, dict) constructs the dataclass from the dict
+    - validate(dict, my_dataclass_instance) converts via dataclasses.asdict()
+    - validate(MyDataclass, other_dataclass_instance) also works
+    """
+
+    # Basic construction from dict
+    def test_simple_dataclass_from_dict(self) -> None:
+        result = validator.validate(UserDataclass, {"name": "bestie", "age": 25})
+        assert isinstance(result, UserDataclass)
+        assert result.name == "bestie"
+        assert result.age == 25
+
+    def test_dataclass_field_coercion(self) -> None:
+        result = validator.validate(StatsDataclass, {"score": 1, "count": 2})
+        assert isinstance(result, StatsDataclass)
+        assert result.score == 1.0
+        assert result.count == 2.0
+        assert isinstance(result.score, float)
+
+    # Defaults
+    def test_dataclass_with_defaults_all_provided(self) -> None:
+        result = validator.validate(
+            UserWithDefaultsDataclass,
+            {"name": "bestie", "age": 30, "active": False},
+        )
+        assert isinstance(result, UserWithDefaultsDataclass)
+        assert result.age == 30
+        assert result.active is False
+
+    def test_dataclass_uses_defaults_for_missing_fields(self) -> None:
+        result = validator.validate(UserWithDefaultsDataclass, {"name": "bestie"})
+        assert isinstance(result, UserWithDefaultsDataclass)
+        assert result.age == 0
+        assert result.active is True
+
+    def test_dataclass_with_default_factory(self) -> None:
+        result = validator.validate(UserWithFactoryDataclass, {"name": "bestie"})
+        assert isinstance(result, UserWithFactoryDataclass)
+        assert result.tags == []
+
+    def test_dataclass_with_default_factory_provided(self) -> None:
+        result = validator.validate(
+            UserWithFactoryDataclass, {"name": "bestie", "tags": ["a", "b"]}
+        )
+        assert isinstance(result, UserWithFactoryDataclass)
+        assert result.tags == ["a", "b"]
+
+    # Nested dataclasses
+    def test_nested_dataclass(self) -> None:
+        result = validator.validate(
+            PersonDataclass,
+            {"name": "bestie", "address": {"city": "NYC", "zip_code": "10001"}},
+        )
+        assert isinstance(result, PersonDataclass)
+        assert isinstance(result.address, AddressDataclass)
+        assert result.address.city == "NYC"
+
+    # From Mapping types
+    def test_dataclass_from_ordered_dict(self) -> None:
+        data = collections.OrderedDict([("name", "bestie"), ("age", 25)])
+        result = validator.validate(UserDataclass, data)
+        assert isinstance(result, UserDataclass)
+        assert result.name == "bestie"
+
+    # Dataclass <-> dict equivalence
+    def test_dataclass_instance_to_dict(self) -> None:
+        user = UserDataclass(name="bestie", age=25)
+        result = validator.validate(dict, user)
+        assert result == {"name": "bestie", "age": 25}
+        assert type(result) is dict
+
+    def test_dataclass_instance_to_typed_dict(self) -> None:
+        user = UserDataclass(name="bestie", age=25)
+        result = validator.validate(UserTypedDict, user)
+        assert result == {"name": "bestie", "age": 25}
+
+    def test_dataclass_instance_to_dataclass(self) -> None:
+        user = UserDataclass(name="bestie", age=25)
+        result = validator.validate(UserDataclass, user)
+        assert isinstance(result, UserDataclass)
+        assert result.name == "bestie"
+        assert result.age == 25
+
+    # Rejection tests
+    def test_rejects_missing_required_field(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(UserDataclass, {"name": "bestie"})
+        assert "age" in str(exc_info.value)
+
+    def test_rejects_extra_keys(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(
+                UserDataclass, {"name": "bestie", "age": 25, "extra": "field"}
+            )
+        assert "extra" in str(exc_info.value)
+
+    def test_rejects_invalid_field_type(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(UserDataclass, {"name": "bestie", "age": "twenty five"})
+        assert "expected int, got str" in str(exc_info.value)
+
+    def test_rejects_non_mapping(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(UserDataclass, "not a dict")
+        assert "expected UserDataclass, got str" in str(exc_info.value)
+
+    def test_rejects_list(self) -> None:
+        with pytest.raises(validator.ValidationError):
+            validator.validate(UserDataclass, [("name", "bestie"), ("age", 25)])
 
 
 class TestValidationError:

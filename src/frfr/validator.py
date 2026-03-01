@@ -1,6 +1,7 @@
 """Core validation logic for frfr."""
 
 import collections.abc
+import dataclasses
 import types
 
 from typing import (
@@ -113,6 +114,10 @@ class Validator:
         # Handle TypedDict (detected via is_typeddict)
         if is_typeddict(target):
             return parse_typed_dict(self, target, data)
+
+        # Handle dataclasses (isinstance(target, type) ensures it's a class, not instance)
+        if dataclasses.is_dataclass(target) and isinstance(target, type):
+            return parse_dataclass(self, target, data)
 
         # Handle Union types (both typing.Union and types.UnionType)
         origin = get_origin(target)
@@ -275,16 +280,21 @@ def parse_tuple[*Ts](
 def parse_dict[K, V](
     validator: ValidatorProtocol, target: type[dict[K, V]], data: object
 ) -> dict[K, V]:
-    """Validate that data is a Mapping, optionally validating keys and values.
+    """Validate that data is a Mapping or dataclass instance.
 
-    Accepts any Mapping type (dict, OrderedDict, MappingProxyType, etc.).
-    For `dict` (unparameterized): accepts any Mapping.
+    Accepts any Mapping type (dict, OrderedDict, MappingProxyType, etc.) or
+    dataclass instance (converted via dataclasses.asdict()).
+    For `dict` (unparameterized): accepts any Mapping/dataclass.
     For `dict[K, V]`: validates each key against K and value against V.
 
     Always returns a new dict (mutable containers are always copied).
 
     Exposed for composition in custom handlers.
     """
+    # Coerce dataclass instances to dict (dataclasses and dicts are equivalent)
+    if dataclasses.is_dataclass(data) and not isinstance(data, type):
+        data = dataclasses.asdict(data)
+
     if not isinstance(data, collections.abc.Mapping):
         raise ValidationError(target, data)
 
@@ -367,6 +377,10 @@ def parse_typed_dict[T](
 
     Exposed for composition in custom handlers.
     """
+    # Coerce dataclass instances to dict (dataclasses and dicts are equivalent)
+    if dataclasses.is_dataclass(data) and not isinstance(data, type):
+        data = dataclasses.asdict(data)
+
     if not isinstance(data, collections.abc.Mapping):
         raise ValidationError(target, data)
 
@@ -398,6 +412,61 @@ def parse_typed_dict[T](
         result[key] = validator.validate(value_type, data[key])  # type: ignore[index]
 
     return cast(T, result)
+
+
+def parse_dataclass[T](
+    validator: ValidatorProtocol, target: type[T], data: object
+) -> T:
+    """Validate that data matches a dataclass schema and construct it.
+
+    Accepts any Mapping or dataclass instance as input. Validates:
+    - All required fields (no default) are present
+    - No extra keys are present
+    - Each value matches its declared type
+
+    Fields with defaults are optional - omitting them lets the dataclass
+    use its declared default or default_factory.
+
+    Calls the dataclass constructor so __post_init__ is run.
+
+    Exposed for composition in custom handlers.
+    """
+    # Coerce dataclass instances to dict (dataclasses and dicts are equivalent)
+    if dataclasses.is_dataclass(data) and not isinstance(data, type):
+        data = dataclasses.asdict(data)
+
+    if not isinstance(data, collections.abc.Mapping):
+        raise ValidationError(target, data)
+
+    hints = get_type_hints(target)
+    fields = {f.name: f for f in dataclasses.fields(cast(type, target))}
+
+    required_keys = frozenset(
+        name
+        for name, f in fields.items()
+        if f.default is dataclasses.MISSING and f.default_factory is dataclasses.MISSING
+    )
+    all_keys = frozenset(fields.keys())
+    data_keys = frozenset(data.keys())
+
+    # Check for missing required fields
+    missing = required_keys - data_keys
+    if missing:
+        missing_key = next(iter(missing))
+        raise ValidationError(target, data, path=f"missing field: {missing_key}")
+
+    # Check for extra keys
+    extra = data_keys - all_keys
+    if extra:
+        extra_key = next(iter(extra))
+        raise ValidationError(target, data, path=f"unexpected key: {extra_key}")
+
+    # Validate and coerce each provided field
+    validated: dict[str, Any] = {}
+    for key in data_keys:
+        validated[key] = validator.validate(hints[key], data[key])  # type: ignore[index]
+
+    return target(**validated)
 
 
 def parse_union(validator: ValidatorProtocol, target: type[Any], data: object) -> Any:

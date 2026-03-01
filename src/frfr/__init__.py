@@ -5,6 +5,7 @@ from frfr.validator import Validator
 from frfr.validator import ValidatorProtocol
 from frfr.validator import parse_any
 from frfr.validator import parse_bool
+from frfr.validator import parse_dataclass
 from frfr.validator import parse_dict
 from frfr.validator import parse_float
 from frfr.validator import parse_frozenset
@@ -25,6 +26,7 @@ __all__ = [
     "ValidatorProtocol",
     "parse_any",
     "parse_bool",
+    "parse_dataclass",
     "parse_dict",
     "parse_float",
     "parse_frozenset",

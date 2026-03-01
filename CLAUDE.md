@@ -136,11 +136,12 @@ my_validator.register(int, my_custom_int_handler)
 - Primitives: `str`, `int`, `float`, `bool`, `None`, `Any`
 - Containers: `list[T]`, `dict[K, V]`, `tuple[T, ...]`, `tuple[T1, T2, ...]`, `set[T]`, `frozenset[T]`
 - Typing constructs: `Union[T1, T2]`, `T | None`, `TypedDict`, `Literal["a", "b"]`
+- Classes: `@dataclass` (construct from dict/Mapping; dataclass instances coerce to dict)
 - Generic types: `list[str]`, `dict[str, int]`, etc.
 - Mapping coercion: `OrderedDict`, `MappingProxyType`, etc. → `dict`
 
 **Planned:**
-- `@dataclass`, `NamedTuple`
+- `NamedTuple`
 
 ## Project structure
 
