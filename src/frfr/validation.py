@@ -61,12 +61,17 @@ class Validator:
     """
 
     def __init__(self, *, frozen: bool = False) -> None:
-        self._handlers: dict[type, Handler[Any]] = {}
+        self._handlers: dict[Any, Handler[Any]] = {}
+        self._predicate_handlers: list[
+            tuple[Callable[[object], bool], Handler[Any]]
+        ] = []
         self._frozen = frozen
         self._register_builtins()
 
     def _register_builtins(self) -> None:
         """Register built-in handlers. Called during __init__."""
+        # Exact-type handlers (including special forms that work as dict keys)
+        self._handlers[Any] = parse_any
         self._handlers[int] = parse_int
         self._handlers[float] = parse_float
         self._handlers[str] = parse_str
@@ -77,9 +82,19 @@ class Validator:
         self._handlers[dict] = parse_dict
         self._handlers[set] = parse_set
         self._handlers[frozenset] = parse_frozenset
+        # Union/Literal are found via get_origin() fallback
+        self._handlers[Union] = parse_union
+        self._handlers[types.UnionType] = parse_union
+        self._handlers[Literal] = parse_literal
+        # Structural handlers matched by predicate (checked in order)
+        self._predicate_handlers = [
+            (is_typeddict, parse_typed_dict),
+            (_is_namedtuple, parse_namedtuple),
+            (_is_dataclass_type, parse_dataclass),
+        ]
 
-    def register[T](self, target: type[T], handler: Handler[T]) -> None:
-        """Register a handler for a target type.
+    def register_type_handler[T](self, target: type[T], handler: Handler[T]) -> None:
+        """Register a handler for an exact target type.
 
         Args:
             target: The type to register a handler for.
@@ -94,6 +109,30 @@ class Validator:
             raise RuntimeError("Cannot register on a frozen validator")
         self._handlers[target] = handler
 
+    def register_predicate_handler[T](
+        self,
+        predicate: Callable[[object], bool],
+        handler: Handler[T],
+    ) -> None:
+        """Register a handler for targets matching a predicate.
+
+        Predicate handlers are checked after exact-type matches but before
+        origin-based matches. The most recently registered predicate handler
+        is checked first, so user-registered handlers override built-ins.
+
+        Args:
+            predicate: A function that takes a type and returns True if this
+                       handler should be used for that type.
+            handler: A function that takes (validator, target_type, data) and
+                     returns a validated/coerced instance of target_type.
+
+        Raises:
+            RuntimeError: If the validator is frozen.
+        """
+        if self._frozen:
+            raise RuntimeError("Cannot register on a frozen validator")
+        self._predicate_handlers.insert(0, (predicate, handler))
+
     def validate[T](self, target: type[T], data: object) -> T:
         """Validate and coerce data to the given type.
 
@@ -107,37 +146,17 @@ class Validator:
         Raises:
             ValidationError: If the data does not match the expected type.
         """
-        # Handle Any explicitly (special form, not a regular type)
-        if target is Any:
-            return cast(T, data)
-
-        # Handle TypedDict (detected via is_typeddict)
-        if is_typeddict(target):
-            return parse_typed_dict(self, target, data)
-
-        # Handle NamedTuples before dataclasses (NamedTuple is-a tuple, not a dataclass)
-        if _is_namedtuple(target):
-            return parse_namedtuple(self, target, data)
-
-        # Handle dataclasses (isinstance(target, type) ensures it's a class, not instance)
-        if dataclasses.is_dataclass(target) and isinstance(target, type):
-            return parse_dataclass(self, target, data)
-
-        # Handle Union types (both typing.Union and types.UnionType)
-        origin = get_origin(target)
-        if origin is Union or isinstance(target, types.UnionType):
-            return cast(T, parse_union(self, target, data))
-
-        # Handle Literal types
-        if origin is Literal:
-            return cast(T, parse_literal(self, target, data))
-
-        # Try exact match first
+        # 1. Exact type match (int, str, Any, ...)
         handler = self._handlers.get(target)
         if handler is not None:
             return cast(T, handler(self, target, data))
 
-        # For generic types like list[int], try the origin type (list)
+        # 2. Predicate handlers (TypedDict, NamedTuple, dataclass, user-defined)
+        for predicate, pred_handler in self._predicate_handlers:
+            if predicate(target):
+                return cast(T, pred_handler(self, target, data))
+
+        # 3. Origin-based match (list[int] -> list, Union[int, str] -> Union, ...)
         origin = get_origin(target)
         if origin is not None:
             handler = self._handlers.get(origin)
@@ -415,6 +434,11 @@ def parse_typed_dict[T](
 def _is_namedtuple(t: object) -> bool:
     """Return True if t is a NamedTuple class (not an instance)."""
     return isinstance(t, type) and issubclass(t, tuple) and hasattr(t, "_fields")
+
+
+def _is_dataclass_type(t: object) -> bool:
+    """Return True if t is a dataclass class (not an instance)."""
+    return dataclasses.is_dataclass(t) and isinstance(t, type)
 
 
 def _coerce_to_mapping(

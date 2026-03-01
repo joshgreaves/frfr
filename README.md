@@ -115,7 +115,7 @@ def parse_user_id(
         return UserId(data)
     raise frfr.ValidationError(target, data)
 
-my_validator.register(UserId, parse_user_id)
+my_validator.register_type_handler(UserId, parse_user_id)
 my_validator.validate(UserId, 42)  # UserId(value=42)
 ```
 
@@ -138,7 +138,7 @@ def lenient_int(
         return int(data)
     return frfr.validation.parse_int(validator, target, data)  # fall back to default
 
-my_validator.register(int, lenient_int)
+my_validator.register_type_handler(int, lenient_int)
 my_validator.validate(int, 1.0)  # 1
 ```
 

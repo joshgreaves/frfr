@@ -97,7 +97,7 @@ Users cannot register on the default validator (it's frozen). They create their 
 
 ```python
 my_validator = frfr.Validator()
-my_validator.register(int, my_custom_int_handler)
+my_validator.register_type_handler(int, my_custom_int_handler)
 ```
 
 ## Design decisions
