@@ -6,6 +6,7 @@ import types
 from typing import (
     Any,
     Callable,
+    Literal,
     Protocol,
     Union,
     cast,
@@ -117,6 +118,10 @@ class Validator:
         origin = get_origin(target)
         if origin is Union or isinstance(target, types.UnionType):
             return cast(T, parse_union(self, target, data))
+
+        # Handle Literal types
+        if origin is Literal:
+            return cast(T, parse_literal(self, target, data))
 
         # Try exact match first
         handler = self._handlers.get(target)
@@ -418,6 +423,22 @@ def parse_union(validator: ValidatorProtocol, target: type[Any], data: object) -
             continue
 
     # None matched - raise error
+    raise ValidationError(target, data)
+
+
+def parse_literal(validator: ValidatorProtocol, target: type[Any], data: object) -> Any:
+    """Validate that data is one of the exact values in a Literal type.
+
+    Uses strict matching: both value and type must match. No coercion.
+    - Literal[1] does not accept True (even though True == 1)
+    - Literal[True] does not accept 1
+
+    Exposed for composition in custom handlers.
+    """
+    allowed = get_args(target)
+    for val in allowed:
+        if type(data) is type(val) and data == val:
+            return data
     raise ValidationError(target, data)
 
 

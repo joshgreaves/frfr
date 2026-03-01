@@ -9,6 +9,7 @@ from frfr.validator import parse_dict
 from frfr.validator import parse_float
 from frfr.validator import parse_frozenset
 from frfr.validator import parse_int
+from frfr.validator import parse_literal
 from frfr.validator import parse_list
 from frfr.validator import parse_none
 from frfr.validator import parse_set
@@ -29,6 +30,7 @@ __all__ = [
     "parse_frozenset",
     "parse_int",
     "parse_list",
+    "parse_literal",
     "parse_none",
     "parse_set",
     "parse_str",

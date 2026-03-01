@@ -135,12 +135,11 @@ my_validator.register(int, my_custom_int_handler)
 **Implemented:**
 - Primitives: `str`, `int`, `float`, `bool`, `None`, `Any`
 - Containers: `list[T]`, `dict[K, V]`, `tuple[T, ...]`, `tuple[T1, T2, ...]`, `set[T]`, `frozenset[T]`
-- Typing constructs: `Union[T1, T2]`, `T | None`, `TypedDict`
+- Typing constructs: `Union[T1, T2]`, `T | None`, `TypedDict`, `Literal["a", "b"]`
 - Generic types: `list[str]`, `dict[str, int]`, etc.
 - Mapping coercion: `OrderedDict`, `MappingProxyType`, etc. → `dict`
 
 **Planned:**
-- `Literal["a", "b"]`
 - `@dataclass`, `NamedTuple`
 
 ## Project structure
@@ -156,9 +155,6 @@ src/frfr/
 ## Next steps
 
 ### Types to implement
-- [ ] `set[T]` - similar to list, coerce from list/tuple
-- [ ] `frozenset[T]` - immutable version
-- [ ] `Literal["a", "b"]` - enum-like string/int validation
 - [ ] `@dataclass` - major use case, construct from dict
 - [ ] `NamedTuple` - similar to dataclass
 

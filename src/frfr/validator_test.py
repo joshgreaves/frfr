@@ -4,7 +4,7 @@
 
 import collections
 import types
-from typing import Any, NotRequired, Required, TypedDict, Union
+from typing import Any, Literal, NotRequired, Required, TypedDict, Union
 
 import pytest
 
@@ -1016,6 +1016,101 @@ class TestValidateFrozenset:
         with pytest.raises(validator.ValidationError) as exc_info:
             validator.validate(frozenset[int], {1, 2, "three"})
         assert "expected int, got str" in str(exc_info.value)
+
+
+class TestValidateLiteral:
+    """Tests for Literal validation.
+
+    Literal types validate that a value is exactly one of the specified
+    literal values. Uses strict type matching (no coercion).
+    """
+
+    # String literals
+    def test_literal_string_valid(self) -> None:
+        result = validator.validate(Literal["a", "b", "c"], "a")  # type: ignore[arg-type]
+        assert result == "a"
+
+    def test_literal_string_second_option(self) -> None:
+        result = validator.validate(Literal["a", "b", "c"], "b")  # type: ignore[arg-type]
+        assert result == "b"
+
+    def test_literal_single_string(self) -> None:
+        result = validator.validate(Literal["only"], "only")  # type: ignore[arg-type]
+        assert result == "only"
+
+    # Int literals
+    def test_literal_int_valid(self) -> None:
+        result = validator.validate(Literal[1, 2, 3], 1)  # type: ignore[arg-type]
+        assert result == 1
+        assert isinstance(result, int)
+
+    def test_literal_negative_int(self) -> None:
+        result = validator.validate(Literal[-1, 0, 1], -1)  # type: ignore[arg-type]
+        assert result == -1
+
+    # Bool literals
+    def test_literal_bool_true(self) -> None:
+        result = validator.validate(Literal[True], True)  # type: ignore[arg-type]
+        assert result is True
+
+    def test_literal_bool_false(self) -> None:
+        result = validator.validate(Literal[False], False)  # type: ignore[arg-type]
+        assert result is False
+
+    def test_literal_bool_both(self) -> None:
+        result = validator.validate(Literal[True, False], True)  # type: ignore[arg-type]
+        assert result is True
+        result = validator.validate(Literal[True, False], False)  # type: ignore[arg-type]
+        assert result is False
+
+    # None literal
+    def test_literal_none(self) -> None:
+        result = validator.validate(Literal[None], None)  # type: ignore[arg-type]
+        assert result is None
+
+    # Mixed literals
+    def test_literal_mixed_types(self) -> None:
+        result = validator.validate(Literal["a", 1, None], "a")  # type: ignore[arg-type]
+        assert result == "a"
+        result = validator.validate(Literal["a", 1, None], 1)  # type: ignore[arg-type]
+        assert result == 1
+        result = validator.validate(Literal["a", 1, None], None)  # type: ignore[arg-type]
+        assert result is None
+
+    # Strict matching - no coercion
+    def test_literal_int_rejects_float(self) -> None:
+        # 1.0 is not 1 for Literal purposes
+        with pytest.raises(validator.ValidationError):
+            validator.validate(Literal[1, 2, 3], 1.0)  # type: ignore[arg-type]
+
+    def test_literal_int_rejects_bool(self) -> None:
+        # True is not 1 for Literal purposes (strict)
+        with pytest.raises(validator.ValidationError):
+            validator.validate(Literal[1], True)  # type: ignore[arg-type]
+
+    def test_literal_bool_rejects_int(self) -> None:
+        # 1 is not True for Literal purposes (strict)
+        with pytest.raises(validator.ValidationError):
+            validator.validate(Literal[True], 1)  # type: ignore[arg-type]
+
+    # Rejection tests
+    def test_rejects_invalid_string(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(Literal["a", "b"], "c")  # type: ignore[arg-type]
+        assert "Literal" in str(exc_info.value) or "'c'" in str(exc_info.value)
+
+    def test_rejects_invalid_int(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(Literal[1, 2, 3], 4)  # type: ignore[arg-type]
+        assert "Literal" in str(exc_info.value) or "4" in str(exc_info.value)
+
+    def test_rejects_wrong_type(self) -> None:
+        with pytest.raises(validator.ValidationError):
+            validator.validate(Literal["a", "b"], 1)  # type: ignore[arg-type]
+
+    def test_rejects_none_when_not_in_literal(self) -> None:
+        with pytest.raises(validator.ValidationError):
+            validator.validate(Literal["a", "b"], None)  # type: ignore[arg-type]
 
 
 class TestValidationError:
