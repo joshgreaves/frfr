@@ -165,9 +165,9 @@ src/frfr/
 - [x] Rename `validator.py` → `validation.py`
 
 ### Architecture fix
-- [ ] Any, Union, TypedDict are hardcoded in `validate()` method - can't be overridden
-- [ ] Should be registered handlers like everything else, not special-cased
-- [ ] Users creating custom Validators should be able to customize these behaviors
+- [x] Any, Union, TypedDict are hardcoded in `validate()` method - can't be overridden
+- [x] Should be registered handlers like everything else, not special-cased
+- [x] Users creating custom Validators should be able to customize these behaviors
 
 ### Testing
 - [ ] Add large-scale integration tests with deeply nested types
@@ -180,9 +180,12 @@ src/frfr/
 - [ ] Need to pass path context through recursive validation calls
 
 ### Type hints
-- [ ] Fix Union/Any type hint issue - currently using `# type: ignore` in tests
-- [ ] Consider if we can make `validate()` signature accept Union types properly
-- [ ] May need overloads or broader type signature
+- [ ] `validate()` uses `type[T]` which pyright rejects for Union/Literal/Any type forms
+- Validation works correctly at runtime — this is a type-hint-only limitation
+- The right fix is `TypeForm[T]` from PEP 747 (`typing_extensions >= 4.15` has it), but
+  pyright 1.1.x doesn't yet infer T correctly for `UnionType` through `TypeForm`
+- For now, call sites using Union/Literal/Any use `# type: ignore[arg-type]`
+- Revisit when pyright adds full `TypeForm` support
 
 ### Documentation & release
 - [ ] Polish README with more examples
