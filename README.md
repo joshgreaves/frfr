@@ -109,7 +109,7 @@ class UserId:
         self.value = value
 
 def parse_user_id(
-    validator: frfr.ValidatorProtocol, target: type[UserId], data: object
+    validator: frfr.Validator, target: type[UserId], data: object
 ) -> UserId:
     if isinstance(data, int) and data > 0:
         return UserId(data)
@@ -132,11 +132,11 @@ my_validator = frfr.Validator()
 
 # allow float -> int coercion (frfr is strict by default)
 def lenient_int(
-    validator: frfr.ValidatorProtocol, target: type[int], data: object
+    validator: frfr.Validator, target: type[int], data: object
 ) -> int:
     if isinstance(data, float) and data.is_integer():
         return int(data)
-    return frfr.parse_int(validator, target, data)  # fall back to default
+    return frfr.validation.parse_int(validator, target, data)  # fall back to default
 
 my_validator.register(int, lenient_int)
 my_validator.validate(int, 1.0)  # 1

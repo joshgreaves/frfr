@@ -147,22 +147,22 @@ my_validator.register(int, my_custom_int_handler)
 
 ```
 src/frfr/
-├── __init__.py       # public API exports
-├── validator.py      # Validator class, handlers, validate()
-├── validator_test.py # tests
-└── py.typed          # PEP 561 marker
+├── __init__.py        # public API exports
+├── validation.py      # Validator class, handlers, validate()
+├── validation_test.py # tests
+└── py.typed           # PEP 561 marker
 ```
 
 ## Next steps
 
 ### Types to implement
-- [ ] `@dataclass` - major use case, construct from dict
-- [ ] `NamedTuple` - similar to dataclass
+- [x] `@dataclass` - major use case, construct from dict
+- [x] `NamedTuple` - similar to dataclass
 
 ### API cleanup
-- [ ] Simplify public API: only export `frfr.validate`, `frfr.ValidationError`, `frfr.Validator`
-- [ ] Move parse functions to internal: `from frfr.validator import parse_int` (not `frfr.parse_int`)
-- [ ] Consider renaming `validator.py` → `validation.py` (noun vs adjective vibes)
+- [x] Simplify public API: only export `frfr.validate`, `frfr.ValidationError`, `frfr.Validator`
+- [x] Move parse functions to internal: `from frfr.validation import parse_int` (not `frfr.parse_int`)
+- [x] Rename `validator.py` → `validation.py`
 
 ### Architecture fix
 - [ ] Any, Union, TypedDict are hardcoded in `validate()` method - can't be overridden

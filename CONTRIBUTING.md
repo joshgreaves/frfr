@@ -59,8 +59,8 @@ uv run ruff check --fix .
 tests live next to the code they test. no fixtures - we use helper functions because explicit is better than implicit (and fixtures are lowkey confusing).
 
 ```
-src/frfr/validators.py
-src/frfr/validators_test.py   # right here bestie
+src/frfr/validation.py
+src/frfr/validation_test.py   # right here bestie
 ```
 
 run tests with:

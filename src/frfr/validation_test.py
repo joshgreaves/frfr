@@ -9,7 +9,7 @@ from typing import Any, Literal, NamedTuple, NotRequired, Required, TypedDict, U
 
 import pytest
 
-from frfr import validator
+from frfr import validation as validator
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +92,7 @@ class UserNamedTuple(NamedTuple):
 
 class StatsNamedTuple(NamedTuple):
     score: float
-    count: float
+    count: float  # pyright: ignore[reportIncompatibleMethodOverride]
 
 
 class AddressNamedTuple(NamedTuple):

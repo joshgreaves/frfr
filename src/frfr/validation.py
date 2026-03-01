@@ -456,7 +456,7 @@ def _coerce_to_str_mapping(
     return cast(collections.abc.Mapping[str, object], mapping)
 
 
-def parse_namedtuple[T](\
+def parse_namedtuple[T](
     validator: ValidatorProtocol, target: type[T], data: object
 ) -> T:
     """Validate that data matches a NamedTuple schema and construct it.
@@ -506,8 +506,7 @@ def parse_namedtuple[T](\
         if len(data) != len(fields):
             raise ValidationError(target, data)
         validated_items = [
-            validator.validate(hints[field], item)
-            for field, item in zip(fields, data)
+            validator.validate(hints[field], item) for field, item in zip(fields, data)
         ]
         return target(*validated_items)
 
