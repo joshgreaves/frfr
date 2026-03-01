@@ -295,27 +295,20 @@ def parse_dict[K, V](
 
     Exposed for composition in custom handlers.
     """
-    # Coerce NamedTuple instances to dict
-    if _is_namedtuple(type(data)) and not isinstance(data, type):
-        data = data._asdict()  # type: ignore[union-attr]
-
-    # Coerce dataclass instances to dict (dataclasses and dicts are equivalent)
-    if dataclasses.is_dataclass(data) and not isinstance(data, type):
-        data = dataclasses.asdict(data)
-
-    if not isinstance(data, collections.abc.Mapping):
+    mapping = _coerce_to_mapping(data)
+    if mapping is None:
         raise ValidationError(target, data)
 
     args = get_args(target)
     if not args:
         # Unparameterized dict, just copy
-        return cast(dict[K, V], dict(data))
+        return cast(dict[K, V], dict(mapping))
 
     # Parameterized dict[K, V] - validate keys and values
     key_type, value_type = args
     return {
         validator.validate(key_type, k): validator.validate(value_type, v)
-        for k, v in data.items()
+        for k, v in mapping.items()
     }
 
 
@@ -385,15 +378,8 @@ def parse_typed_dict[T](
 
     Exposed for composition in custom handlers.
     """
-    # Coerce NamedTuple instances to dict
-    if _is_namedtuple(type(data)) and not isinstance(data, type):
-        data = data._asdict()  # type: ignore[union-attr]
-
-    # Coerce dataclass instances to dict (dataclasses and dicts are equivalent)
-    if dataclasses.is_dataclass(data) and not isinstance(data, type):
-        data = dataclasses.asdict(data)
-
-    if not isinstance(data, collections.abc.Mapping):
+    mapping = _coerce_to_str_mapping(data)
+    if mapping is None:
         raise ValidationError(target, data)
 
     # Get type hints and required/optional keys
@@ -403,25 +389,25 @@ def parse_typed_dict[T](
     all_keys = required_keys | optional_keys
 
     # TypedDict keys are always strings
-    data_keys: set[str] = {cast(str, k) for k in data.keys()}
+    data_keys: set[str] = set(mapping.keys())
 
     # Check for missing required keys
     missing = required_keys - data_keys
     if missing:
         missing_key = next(iter(missing))
-        raise ValidationError(target, data, path=f"missing key: {missing_key}")
+        raise ValidationError(target, mapping, path=f"missing key: {missing_key}")
 
     # Check for extra keys
     extra = data_keys - all_keys
     if extra:
         extra_key = next(iter(extra))
-        raise ValidationError(target, data, path=f"unexpected key: {extra_key}")
+        raise ValidationError(target, mapping, path=f"unexpected key: {extra_key}")
 
     # Validate each value against its type hint
     result: dict[str, Any] = {}
     for key in data_keys:
         value_type = hints[key]
-        result[key] = validator.validate(value_type, data[key])  # type: ignore[index]
+        result[key] = validator.validate(value_type, mapping[key])
 
     return cast(T, result)
 
@@ -429,6 +415,45 @@ def parse_typed_dict[T](
 def _is_namedtuple(t: object) -> bool:
     """Return True if t is a NamedTuple class (not an instance)."""
     return isinstance(t, type) and issubclass(t, tuple) and hasattr(t, "_fields")
+
+
+def _coerce_to_mapping(
+    data: object,
+) -> collections.abc.Mapping[Any, object] | None:
+    """Coerce NamedTuple/dataclass instances to a Mapping, or return None.
+
+    Accepts any Mapping as-is. Converts NamedTuple via ._asdict() and
+    dataclass instances via dataclasses.asdict(). Returns None for anything
+    else (signals the caller to raise ValidationError).
+
+    Does not enforce key types — use _coerce_to_str_mapping for schema-based
+    handlers that require string keys (TypedDict, dataclass, NamedTuple).
+    """
+    if _is_namedtuple(type(data)) and not isinstance(data, type):
+        return data._asdict()  # type: ignore[union-attr]
+    if dataclasses.is_dataclass(data) and not isinstance(data, type):
+        return dataclasses.asdict(data)
+    if isinstance(data, collections.abc.Mapping):
+        return data
+    return None
+
+
+def _coerce_to_str_mapping(
+    data: object,
+) -> collections.abc.Mapping[str, object] | None:
+    """Coerce to a Mapping and verify all keys are strings, or return None.
+
+    Wraps _coerce_to_mapping and adds string-key enforcement. Use this for
+    schema-based handlers (TypedDict, dataclass, NamedTuple) where field
+    names are always strings. Returns None if data is not a Mapping or if
+    any key is not a str (signals the caller to raise ValidationError).
+    """
+    mapping = _coerce_to_mapping(data)
+    if mapping is None:
+        return None
+    if not all(isinstance(k, str) for k in mapping):
+        return None
+    return cast(collections.abc.Mapping[str, object], mapping)
 
 
 def parse_namedtuple[T](\
@@ -451,37 +476,30 @@ def parse_namedtuple[T](\
     if hasattr(target, "_field_defaults"):
         defaults = target._field_defaults  # type: ignore[union-attr]
 
-    # Coerce NamedTuple instances to dict for mapping-path processing
-    if _is_namedtuple(type(data)) and not isinstance(data, type):
-        data = data._asdict()  # type: ignore[union-attr]
-
-    # Coerce dataclass instances to dict
-    if dataclasses.is_dataclass(data) and not isinstance(data, type):
-        data = dataclasses.asdict(data)
-
-    if isinstance(data, collections.abc.Mapping):
+    mapping = _coerce_to_str_mapping(data)
+    if mapping is not None:
         # Named construction path
         all_keys = frozenset(fields)
         required_keys = frozenset(f for f in fields if f not in defaults)
-        data_keys = frozenset(data.keys())
+        data_keys = frozenset(mapping.keys())
 
         missing = required_keys - data_keys
         if missing:
             missing_key = next(iter(missing))
-            raise ValidationError(target, data, path=f"missing field: {missing_key}")
+            raise ValidationError(target, mapping, path=f"missing field: {missing_key}")
 
         extra = data_keys - all_keys
         if extra:
             extra_key = next(iter(extra))
-            raise ValidationError(target, data, path=f"unexpected key: {extra_key}")
+            raise ValidationError(target, mapping, path=f"unexpected key: {extra_key}")
 
         validated: dict[str, Any] = {}
         for field in fields:
             if field in data_keys:
-                validated[field] = validator.validate(hints[field], data[field])  # type: ignore[index]
+                validated[field] = validator.validate(hints[field], mapping[field])
             # Fields not in data_keys have defaults; omit them so NamedTuple uses its default
 
-        return target(**validated)  # type: ignore[return-value]
+        return target(**validated)
 
     if isinstance(data, (list, tuple)):
         # Positional construction path - length must match exactly
@@ -491,7 +509,7 @@ def parse_namedtuple[T](\
             validator.validate(hints[field], item)
             for field, item in zip(fields, data)
         ]
-        return target(*validated_items)  # type: ignore[return-value]
+        return target(*validated_items)
 
     raise ValidationError(target, data)
 
@@ -513,15 +531,8 @@ def parse_dataclass[T](
 
     Exposed for composition in custom handlers.
     """
-    # Coerce NamedTuple instances to dict
-    if _is_namedtuple(type(data)) and not isinstance(data, type):
-        data = data._asdict()  # type: ignore[union-attr]
-
-    # Coerce dataclass instances to dict (dataclasses and dicts are equivalent)
-    if dataclasses.is_dataclass(data) and not isinstance(data, type):
-        data = dataclasses.asdict(data)
-
-    if not isinstance(data, collections.abc.Mapping):
+    mapping = _coerce_to_mapping(data)
+    if mapping is None:
         raise ValidationError(target, data)
 
     hints = get_type_hints(target)
@@ -533,24 +544,24 @@ def parse_dataclass[T](
         if f.default is dataclasses.MISSING and f.default_factory is dataclasses.MISSING
     )
     all_keys = frozenset(fields.keys())
-    data_keys = frozenset(data.keys())
+    data_keys = frozenset(mapping.keys())
 
     # Check for missing required fields
     missing = required_keys - data_keys
     if missing:
         missing_key = next(iter(missing))
-        raise ValidationError(target, data, path=f"missing field: {missing_key}")
+        raise ValidationError(target, mapping, path=f"missing field: {missing_key}")
 
     # Check for extra keys
     extra = data_keys - all_keys
     if extra:
         extra_key = next(iter(extra))
-        raise ValidationError(target, data, path=f"unexpected key: {extra_key}")
+        raise ValidationError(target, mapping, path=f"unexpected key: {extra_key}")
 
     # Validate and coerce each provided field
     validated: dict[str, Any] = {}
     for key in data_keys:
-        validated[key] = validator.validate(hints[key], data[key])  # type: ignore[index]
+        validated[key] = validator.validate(hints[key], mapping[key])
 
     return target(**validated)
 
