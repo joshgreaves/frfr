@@ -119,6 +119,12 @@ my_validator.register(int, my_custom_int_handler)
 - Example: `Union[int, float]` with `1` → `1` (int matches first, no coercion needed)
 - Both `Union[A, B]` and `A | B` syntax are supported
 
+### Set types - no list/tuple coercion
+- `set` and `frozenset` only accept set/frozenset as input
+- No coercion from list/tuple - could silently lose data (duplicates)
+- Ordering doesn't transfer meaningfully between lists and sets
+- `set` ↔ `frozenset` coercion is allowed (lossless, both are set-like)
+
 ### Always return new objects for mutable containers
 - Mutable containers (list, dict, set) always return a NEW object, never the original
 - This ensures safety: mutations to validated data don't affect the original input
@@ -128,13 +134,12 @@ my_validator.register(int, my_custom_int_handler)
 ### Supported types
 **Implemented:**
 - Primitives: `str`, `int`, `float`, `bool`, `None`, `Any`
-- Containers: `list[T]`, `dict[K, V]`, `tuple[T, ...]`, `tuple[T1, T2, ...]`
+- Containers: `list[T]`, `dict[K, V]`, `tuple[T, ...]`, `tuple[T1, T2, ...]`, `set[T]`, `frozenset[T]`
 - Typing constructs: `Union[T1, T2]`, `T | None`, `TypedDict`
 - Generic types: `list[str]`, `dict[str, int]`, etc.
 - Mapping coercion: `OrderedDict`, `MappingProxyType`, etc. → `dict`
 
 **Planned:**
-- `set[T]`, `frozenset[T]`
 - `Literal["a", "b"]`
 - `@dataclass`, `NamedTuple`
 

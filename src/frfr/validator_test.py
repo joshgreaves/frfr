@@ -854,6 +854,170 @@ class TestValidateUnion:
             validator.validate(int | str, None)  # type: ignore[arg-type]
 
 
+class TestValidateSet:
+    """Tests for set validation.
+
+    Only accepts set/frozenset as input - no coercion from list/tuple
+    since that could lose data (duplicates) and ordering doesn't transfer.
+    """
+
+    # Unparameterized set
+    def test_unparameterized_set(self) -> None:
+        result = validator.validate(set, {1, 2, 3})
+        assert result == {1, 2, 3}
+        assert isinstance(result, set)
+
+    def test_empty_set(self) -> None:
+        result = validator.validate(set, set())
+        assert result == set()
+        assert isinstance(result, set)
+
+    # Always returns new set (mutable container)
+    def test_returns_new_set(self) -> None:
+        original = {1, 2, 3}
+        result = validator.validate(set, original)
+        assert result == original
+        assert result is not original
+
+    def test_returns_new_set_parameterized(self) -> None:
+        original = {1, 2, 3}
+        result = validator.validate(set[int], original)
+        assert result == original
+        assert result is not original
+
+    # Parameterized set[T]
+    def test_set_of_int(self) -> None:
+        result = validator.validate(set[int], {1, 2, 3})
+        assert result == {1, 2, 3}
+        assert isinstance(result, set)
+        assert all(isinstance(x, int) for x in result)
+
+    def test_set_of_str(self) -> None:
+        result = validator.validate(set[str], {"a", "b", "c"})
+        assert result == {"a", "b", "c"}
+        assert isinstance(result, set)
+
+    # Frozenset coerces to set (lossless, both are set-like)
+    def test_frozenset_coerces_to_set(self) -> None:
+        result = validator.validate(set[int], frozenset({1, 2, 3}))
+        assert result == {1, 2, 3}
+        assert isinstance(result, set)
+
+    # Element coercion (int -> float still works)
+    def test_set_element_coercion(self) -> None:
+        result = validator.validate(set[float], {1, 2, 3})
+        assert result == {1.0, 2.0, 3.0}
+        assert all(isinstance(x, float) for x in result)
+
+    # Rejection tests - no list/tuple coercion
+    def test_rejects_list(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(set, [1, 2, 3])
+        assert "expected set, got list" in str(exc_info.value)
+
+    def test_rejects_tuple(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(set, (1, 2, 3))
+        assert "expected set, got tuple" in str(exc_info.value)
+
+    @pytest.mark.parametrize(
+        ("value", "expected_type_name"),
+        [
+            ("not a set", "str"),
+            (123, "int"),
+            ({"a": 1}, "dict"),
+            (None, "NoneType"),
+        ],
+        ids=["str", "int", "dict", "none"],
+    )
+    def test_rejects_non_set(self, value: object, expected_type_name: str) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(set, value)
+        assert f"expected set, got {expected_type_name}" in str(exc_info.value)
+
+    def test_rejects_invalid_element_type(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(set[int], {1, 2, "three"})
+        assert "expected int, got str" in str(exc_info.value)
+
+    def test_rejects_bool_in_int_set(self) -> None:
+        # Note: {1, True} collapses to {1} in Python since True == 1
+        # Use {True, 2} which becomes {True, 2} to test bool rejection
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(set[int], {True, 2, 3})
+        assert "expected int, got bool" in str(exc_info.value)
+
+
+class TestValidateFrozenset:
+    """Tests for frozenset validation.
+
+    Only accepts set/frozenset as input - same reasoning as set.
+    """
+
+    # Unparameterized frozenset
+    def test_unparameterized_frozenset(self) -> None:
+        result = validator.validate(frozenset, frozenset({1, 2, 3}))
+        assert result == frozenset({1, 2, 3})
+        assert isinstance(result, frozenset)
+
+    def test_empty_frozenset(self) -> None:
+        result = validator.validate(frozenset, frozenset())
+        assert result == frozenset()
+        assert isinstance(result, frozenset)
+
+    # Parameterized frozenset[T]
+    def test_frozenset_of_int(self) -> None:
+        result = validator.validate(frozenset[int], frozenset({1, 2, 3}))
+        assert result == frozenset({1, 2, 3})
+        assert isinstance(result, frozenset)
+        assert all(isinstance(x, int) for x in result)
+
+    # Set coerces to frozenset (lossless)
+    def test_set_coerces_to_frozenset(self) -> None:
+        result = validator.validate(frozenset[int], {1, 2, 3})
+        assert result == frozenset({1, 2, 3})
+        assert isinstance(result, frozenset)
+
+    # Element coercion
+    def test_frozenset_element_coercion(self) -> None:
+        result = validator.validate(frozenset[float], {1, 2, 3})
+        assert result == frozenset({1.0, 2.0, 3.0})
+        assert all(isinstance(x, float) for x in result)
+
+    # Rejection tests - no list/tuple coercion
+    def test_rejects_list(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(frozenset, [1, 2, 3])
+        assert "expected frozenset, got list" in str(exc_info.value)
+
+    def test_rejects_tuple(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(frozenset, (1, 2, 3))
+        assert "expected frozenset, got tuple" in str(exc_info.value)
+
+    @pytest.mark.parametrize(
+        ("value", "expected_type_name"),
+        [
+            ("not a frozenset", "str"),
+            (123, "int"),
+            ({"a": 1}, "dict"),
+            (None, "NoneType"),
+        ],
+        ids=["str", "int", "dict", "none"],
+    )
+    def test_rejects_non_frozenset(
+        self, value: object, expected_type_name: str
+    ) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(frozenset, value)
+        assert f"expected frozenset, got {expected_type_name}" in str(exc_info.value)
+
+    def test_rejects_invalid_element_type(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(frozenset[int], {1, 2, "three"})
+        assert "expected int, got str" in str(exc_info.value)
+
+
 class TestValidationError:
     """Tests for ValidationError formatting."""
 

@@ -73,6 +73,8 @@ class Validator:
         self._handlers[list] = parse_list
         self._handlers[tuple] = parse_tuple
         self._handlers[dict] = parse_dict
+        self._handlers[set] = parse_set
+        self._handlers[frozenset] = parse_frozenset
 
     def register[T](self, target: type[T], handler: Handler[T]) -> None:
         """Register a handler for a target type.
@@ -292,6 +294,59 @@ def parse_dict[K, V](
         validator.validate(key_type, k): validator.validate(value_type, v)
         for k, v in data.items()
     }
+
+
+def parse_set[T](
+    validator: ValidatorProtocol, target: type[set[T]], data: object
+) -> set[T]:
+    """Validate that data is a set or frozenset, optionally validating elements.
+
+    Only accepts set/frozenset as input - no coercion from list/tuple since
+    that could lose data (duplicates) and ordering doesn't transfer meaningfully.
+
+    For `set` (unparameterized): accepts any set/frozenset.
+    For `set[T]`: validates each element against T.
+
+    Always returns a new set (mutable containers are always copied).
+
+    Exposed for composition in custom handlers.
+    """
+    if not isinstance(data, (set, frozenset)):
+        raise ValidationError(target, data)
+
+    args = get_args(target)
+    if not args:
+        # Unparameterized set, just copy
+        return cast(set[T], set(data))
+
+    # Validate each element against the element type
+    element_type = args[0]
+    return {validator.validate(element_type, item) for item in data}
+
+
+def parse_frozenset[T](
+    validator: ValidatorProtocol, target: type[frozenset[T]], data: object
+) -> frozenset[T]:
+    """Validate that data is a set or frozenset, optionally validating elements.
+
+    Only accepts set/frozenset as input - same reasoning as set.
+
+    For `frozenset` (unparameterized): accepts any set/frozenset.
+    For `frozenset[T]`: validates each element against T.
+
+    Exposed for composition in custom handlers.
+    """
+    if not isinstance(data, (set, frozenset)):
+        raise ValidationError(target, data)
+
+    args = get_args(target)
+    if not args:
+        # Unparameterized frozenset, just convert
+        return cast(frozenset[T], frozenset(data))
+
+    # Validate each element against the element type
+    element_type = args[0]
+    return frozenset(validator.validate(element_type, item) for item in data)
 
 
 def parse_typed_dict[T](
