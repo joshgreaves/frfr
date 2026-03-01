@@ -5,7 +5,7 @@
 import collections
 import dataclasses
 import types
-from typing import Any, Literal, NotRequired, Required, TypedDict, Union
+from typing import Any, Literal, NamedTuple, NotRequired, Required, TypedDict, Union
 
 import pytest
 
@@ -83,6 +83,32 @@ class UserWithDefaultsDataclass:
 class UserWithFactoryDataclass:
     name: str
     tags: list[str] = dataclasses.field(default_factory=list)
+
+
+class UserNamedTuple(NamedTuple):
+    name: str
+    age: int
+
+
+class StatsNamedTuple(NamedTuple):
+    score: float
+    count: float
+
+
+class AddressNamedTuple(NamedTuple):
+    city: str
+    zip_code: str
+
+
+class PersonNamedTuple(NamedTuple):
+    name: str
+    address: AddressNamedTuple
+
+
+class UserWithDefaultsNamedTuple(NamedTuple):
+    name: str
+    age: int = 0
+    active: bool = True
 
 
 class TestValidateInt:
@@ -678,6 +704,12 @@ class TestValidateDict:
             validator.validate(dict, value)
         assert f"expected dict, got {expected_type_name}" in str(exc_info.value)
 
+    def test_namedtuple_instance_to_dict(self) -> None:
+        user = UserNamedTuple(name="bestie", age=25)
+        result = validator.validate(dict, user)
+        assert result == {"name": "bestie", "age": 25}
+        assert type(result) is dict
+
     def test_rejects_invalid_key_type(self) -> None:
         with pytest.raises(validator.ValidationError) as exc_info:
             validator.validate(dict[str, int], {1: 1})
@@ -735,6 +767,11 @@ class TestValidateTypedDict:
         result = validator.validate(UserTypedDict, data)
         assert result == {"name": "bestie", "age": 25}
         assert type(result) is dict
+
+    def test_namedtuple_instance_to_typed_dict(self) -> None:
+        user = UserNamedTuple(name="bestie", age=25)
+        result = validator.validate(UserTypedDict, user)
+        assert result == {"name": "bestie", "age": 25}
 
     # Rejection tests
     def test_rejects_missing_required_key(self) -> None:
@@ -1233,6 +1270,13 @@ class TestValidateDataclass:
         assert result.name == "bestie"
         assert result.age == 25
 
+    def test_namedtuple_instance_to_dataclass(self) -> None:
+        user = UserNamedTuple(name="bestie", age=25)
+        result = validator.validate(UserDataclass, user)
+        assert isinstance(result, UserDataclass)
+        assert result.name == "bestie"
+        assert result.age == 25
+
     # Rejection tests
     def test_rejects_missing_required_field(self) -> None:
         with pytest.raises(validator.ValidationError) as exc_info:
@@ -1259,6 +1303,137 @@ class TestValidateDataclass:
     def test_rejects_list(self) -> None:
         with pytest.raises(validator.ValidationError):
             validator.validate(UserDataclass, [("name", "bestie"), ("age", 25)])
+
+
+class TestValidateNamedTuple:
+    """Tests for NamedTuple validation.
+
+    NamedTuples have dual nature: they are tuples (positional) AND mappings
+    (named fields). Both construction modes are supported.
+    """
+
+    # Construction from dict (by field name)
+    def test_namedtuple_from_dict(self) -> None:
+        result = validator.validate(UserNamedTuple, {"name": "bestie", "age": 25})
+        assert isinstance(result, UserNamedTuple)
+        assert result.name == "bestie"
+        assert result.age == 25
+
+    def test_namedtuple_field_coercion_from_dict(self) -> None:
+        result = validator.validate(StatsNamedTuple, {"score": 1, "count": 2})
+        assert isinstance(result, StatsNamedTuple)
+        assert result.score == 1.0
+        assert result.count == 2.0
+        assert isinstance(result.score, float)
+
+    # Construction from tuple/list (positional)
+    def test_namedtuple_from_tuple(self) -> None:
+        result = validator.validate(UserNamedTuple, ("bestie", 25))
+        assert isinstance(result, UserNamedTuple)
+        assert result.name == "bestie"
+        assert result.age == 25
+
+    def test_namedtuple_from_list(self) -> None:
+        result = validator.validate(UserNamedTuple, ["bestie", 25])
+        assert isinstance(result, UserNamedTuple)
+        assert result.name == "bestie"
+        assert result.age == 25
+
+    def test_namedtuple_field_coercion_from_tuple(self) -> None:
+        result = validator.validate(StatsNamedTuple, (1, 2))
+        assert isinstance(result, StatsNamedTuple)
+        assert result.score == 1.0
+        assert result.count == 2.0
+
+    # Defaults
+    def test_namedtuple_with_defaults_from_dict(self) -> None:
+        result = validator.validate(UserWithDefaultsNamedTuple, {"name": "bestie"})
+        assert isinstance(result, UserWithDefaultsNamedTuple)
+        assert result.name == "bestie"
+        assert result.age == 0
+        assert result.active is True
+
+    def test_namedtuple_with_defaults_all_provided(self) -> None:
+        result = validator.validate(
+            UserWithDefaultsNamedTuple, {"name": "bestie", "age": 30, "active": False}
+        )
+        assert isinstance(result, UserWithDefaultsNamedTuple)
+        assert result.age == 30
+        assert result.active is False
+
+    # Nested NamedTuples
+    def test_nested_namedtuple_from_dict(self) -> None:
+        result = validator.validate(
+            PersonNamedTuple,
+            {"name": "bestie", "address": {"city": "NYC", "zip_code": "10001"}},
+        )
+        assert isinstance(result, PersonNamedTuple)
+        assert isinstance(result.address, AddressNamedTuple)
+        assert result.address.city == "NYC"
+
+    # From Mapping types
+    def test_namedtuple_from_ordered_dict(self) -> None:
+        data = collections.OrderedDict([("name", "bestie"), ("age", 25)])
+        result = validator.validate(UserNamedTuple, data)
+        assert isinstance(result, UserNamedTuple)
+        assert result.name == "bestie"
+
+    # Cross-type conversions where target IS NamedTuple
+    def test_namedtuple_from_namedtuple(self) -> None:
+        user = UserNamedTuple(name="bestie", age=25)
+        result = validator.validate(UserNamedTuple, user)
+        assert isinstance(result, UserNamedTuple)
+        assert result.name == "bestie"
+        assert result.age == 25
+
+    def test_typed_dict_to_namedtuple(self) -> None:
+        data: UserTypedDict = {"name": "bestie", "age": 25}
+        result = validator.validate(UserNamedTuple, data)
+        assert isinstance(result, UserNamedTuple)
+        assert result.name == "bestie"
+
+    def test_dataclass_to_namedtuple(self) -> None:
+        user = UserDataclass(name="bestie", age=25)
+        result = validator.validate(UserNamedTuple, user)
+        assert isinstance(result, UserNamedTuple)
+        assert result.name == "bestie"
+        assert result.age == 25
+
+    # Rejection tests
+    def test_rejects_wrong_length_tuple(self) -> None:
+        with pytest.raises(validator.ValidationError):
+            validator.validate(UserNamedTuple, ("bestie",))
+
+    def test_rejects_too_many_positional(self) -> None:
+        with pytest.raises(validator.ValidationError):
+            validator.validate(UserNamedTuple, ("bestie", 25, "extra"))
+
+    def test_rejects_missing_required_field(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(UserNamedTuple, {"name": "bestie"})
+        assert "age" in str(exc_info.value)
+
+    def test_rejects_extra_keys(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(
+                UserNamedTuple, {"name": "bestie", "age": 25, "extra": "field"}
+            )
+        assert "extra" in str(exc_info.value)
+
+    def test_rejects_invalid_field_type_from_dict(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(UserNamedTuple, {"name": "bestie", "age": "twenty five"})
+        assert "expected int, got str" in str(exc_info.value)
+
+    def test_rejects_invalid_element_type_from_tuple(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(UserNamedTuple, ("bestie", "not an int"))
+        assert "expected int, got str" in str(exc_info.value)
+
+    def test_rejects_non_mapping_non_sequence(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(UserNamedTuple, "not a tuple or dict")
+        assert "expected UserNamedTuple, got str" in str(exc_info.value)
 
 
 class TestValidationError:

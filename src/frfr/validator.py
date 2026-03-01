@@ -115,6 +115,10 @@ class Validator:
         if is_typeddict(target):
             return parse_typed_dict(self, target, data)
 
+        # Handle NamedTuples before dataclasses (NamedTuple is-a tuple, not a dataclass)
+        if _is_namedtuple(target):
+            return parse_namedtuple(self, target, data)
+
         # Handle dataclasses (isinstance(target, type) ensures it's a class, not instance)
         if dataclasses.is_dataclass(target) and isinstance(target, type):
             return parse_dataclass(self, target, data)
@@ -291,6 +295,10 @@ def parse_dict[K, V](
 
     Exposed for composition in custom handlers.
     """
+    # Coerce NamedTuple instances to dict
+    if _is_namedtuple(type(data)) and not isinstance(data, type):
+        data = data._asdict()  # type: ignore[union-attr]
+
     # Coerce dataclass instances to dict (dataclasses and dicts are equivalent)
     if dataclasses.is_dataclass(data) and not isinstance(data, type):
         data = dataclasses.asdict(data)
@@ -377,6 +385,10 @@ def parse_typed_dict[T](
 
     Exposed for composition in custom handlers.
     """
+    # Coerce NamedTuple instances to dict
+    if _is_namedtuple(type(data)) and not isinstance(data, type):
+        data = data._asdict()  # type: ignore[union-attr]
+
     # Coerce dataclass instances to dict (dataclasses and dicts are equivalent)
     if dataclasses.is_dataclass(data) and not isinstance(data, type):
         data = dataclasses.asdict(data)
@@ -414,6 +426,76 @@ def parse_typed_dict[T](
     return cast(T, result)
 
 
+def _is_namedtuple(t: object) -> bool:
+    """Return True if t is a NamedTuple class (not an instance)."""
+    return isinstance(t, type) and issubclass(t, tuple) and hasattr(t, "_fields")
+
+
+def parse_namedtuple[T](\
+    validator: ValidatorProtocol, target: type[T], data: object
+) -> T:
+    """Validate that data matches a NamedTuple schema and construct it.
+
+    Accepts two input forms:
+    - Mapping (dict, OrderedDict, dataclass, etc.): validated by field name.
+      Fields with defaults may be omitted; extra keys are rejected.
+    - Sequence (tuple, list, NamedTuple): validated positionally.
+      Length must exactly match the number of fields (no defaults applied
+      from sequences - all fields must be provided).
+
+    Exposed for composition in custom handlers.
+    """
+    fields: tuple[str, ...] = target._fields  # type: ignore[union-attr]
+    hints = get_type_hints(target)
+    defaults: dict[str, object] = {}
+    if hasattr(target, "_field_defaults"):
+        defaults = target._field_defaults  # type: ignore[union-attr]
+
+    # Coerce NamedTuple instances to dict for mapping-path processing
+    if _is_namedtuple(type(data)) and not isinstance(data, type):
+        data = data._asdict()  # type: ignore[union-attr]
+
+    # Coerce dataclass instances to dict
+    if dataclasses.is_dataclass(data) and not isinstance(data, type):
+        data = dataclasses.asdict(data)
+
+    if isinstance(data, collections.abc.Mapping):
+        # Named construction path
+        all_keys = frozenset(fields)
+        required_keys = frozenset(f for f in fields if f not in defaults)
+        data_keys = frozenset(data.keys())
+
+        missing = required_keys - data_keys
+        if missing:
+            missing_key = next(iter(missing))
+            raise ValidationError(target, data, path=f"missing field: {missing_key}")
+
+        extra = data_keys - all_keys
+        if extra:
+            extra_key = next(iter(extra))
+            raise ValidationError(target, data, path=f"unexpected key: {extra_key}")
+
+        validated: dict[str, Any] = {}
+        for field in fields:
+            if field in data_keys:
+                validated[field] = validator.validate(hints[field], data[field])  # type: ignore[index]
+            # Fields not in data_keys have defaults; omit them so NamedTuple uses its default
+
+        return target(**validated)  # type: ignore[return-value]
+
+    if isinstance(data, (list, tuple)):
+        # Positional construction path - length must match exactly
+        if len(data) != len(fields):
+            raise ValidationError(target, data)
+        validated_items = [
+            validator.validate(hints[field], item)
+            for field, item in zip(fields, data)
+        ]
+        return target(*validated_items)  # type: ignore[return-value]
+
+    raise ValidationError(target, data)
+
+
 def parse_dataclass[T](
     validator: ValidatorProtocol, target: type[T], data: object
 ) -> T:
@@ -431,6 +513,10 @@ def parse_dataclass[T](
 
     Exposed for composition in custom handlers.
     """
+    # Coerce NamedTuple instances to dict
+    if _is_namedtuple(type(data)) and not isinstance(data, type):
+        data = data._asdict()  # type: ignore[union-attr]
+
     # Coerce dataclass instances to dict (dataclasses and dicts are equivalent)
     if dataclasses.is_dataclass(data) and not isinstance(data, type):
         data = dataclasses.asdict(data)
