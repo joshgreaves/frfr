@@ -75,3 +75,12 @@ venv.bak/
 
 # Local development notes (not for git)
 local/
+
+# Claude Code
+.claude/
+
+# Rust
+rust/*/target/
+rust/*/.venv/
+rust/*/uv.lock
+Cargo.lock

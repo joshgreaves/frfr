@@ -1,0 +1,18 @@
+[package]
+name = "frfr-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Rust core for frfr - runtime type validation library"
+
+[lib]
+name = "_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.22", features = ["extension-module", "py-clone"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
