@@ -776,6 +776,20 @@ class TestValidateDict:
         assert exc_info.value.path == ".outer.inner"
         assert ".outer.inner - expected int" in str(exc_info.value)
 
+    def test_error_path_invalid_key_shows_key_marker(self) -> None:
+        """Invalid key should show [key] marker to distinguish from value errors."""
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(dict[int, str], {"foo": "bar"})
+        assert exc_info.value.path == ".foo[key]"
+        assert ".foo[key] - expected int" in str(exc_info.value)
+
+    def test_error_path_invalid_key_nested(self) -> None:
+        """Invalid key in nested dict should show full path with [key] marker."""
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(dict[str, dict[int, str]], {"outer": {"bad": "val"}})
+        assert exc_info.value.path == ".outer.bad[key]"
+        assert ".outer.bad[key] - expected int" in str(exc_info.value)
+
 
 class TestValidateTypedDict:
     """Tests for TypedDict validation."""

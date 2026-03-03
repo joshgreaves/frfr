@@ -366,11 +366,11 @@ def parse_dict[K, V](
     key_type, value_type = args
     result: dict[K, V] = {}
     for k, v in mapping.items():
-        # Keys don't get a path (they're the path segment, not a location)
-        validated_key = validator._validate_at(key_type, k, path)
+        # Keys get path like .keyvalue[key] to indicate key validation failed
+        key_path_segment = f"{path}.{k}" if path else f".{k}"
+        validated_key = validator._validate_at(key_type, k, f"{key_path_segment}[key]")
         # Values get the key as path segment
-        key_path = f"{path}.{k}" if path else f".{k}"
-        validated_value = validator._validate_at(value_type, v, key_path)
+        validated_value = validator._validate_at(value_type, v, key_path_segment)
         result[validated_key] = validated_value
     return result
 
