@@ -43,10 +43,15 @@ class ValidatorProtocol(Protocol):
         """Validate and coerce data to the given type."""
         ...
 
+    def _validate_at[T](self, target: type[T], data: object, path: str) -> T:
+        """Validate at a specific path (internal, for handlers)."""
+        ...
+
 
 # Type alias for handler functions.
 # Handlers receive a ValidatorProtocol to enable recursive validation.
-type Handler[T] = Callable[[ValidatorProtocol, type[T], object], T]
+# The path parameter tracks location in nested structures for error messages.
+type Handler[T] = Callable[[ValidatorProtocol, type[T], object, str], T]
 
 
 class Validator:
@@ -146,43 +151,61 @@ class Validator:
         Raises:
             ValidationError: If the data does not match the expected type.
         """
+        return self._validate_at(target, data, path="")
+
+    def _validate_at[T](self, target: type[T], data: object, path: str) -> T:
+        """Validate at a specific path (internal, for handlers).
+
+        Args:
+            target: The type to validate against.
+            data: The data to validate.
+            path: The path to this location in the data structure.
+
+        Returns:
+            The validated data, coerced to the target type if needed.
+
+        Raises:
+            ValidationError: If the data does not match the expected type.
+        """
         # 1. Exact type match (int, str, Any, ...)
         handler = self._handlers.get(target)
         if handler is not None:
-            return cast(T, handler(self, target, data))
+            return cast(T, handler(self, target, data, path))
 
         # 2. Predicate handlers (TypedDict, NamedTuple, dataclass, user-defined)
         for predicate, pred_handler in self._predicate_handlers:
             if predicate(target):
-                return cast(T, pred_handler(self, target, data))
+                return cast(T, pred_handler(self, target, data, path))
 
         # 3. Origin-based match (list[int] -> list, Union[int, str] -> Union, ...)
         origin = get_origin(target)
         if origin is not None:
             handler = self._handlers.get(origin)
             if handler is not None:
-                return cast(T, handler(self, target, data))
+                return cast(T, handler(self, target, data, path))
 
-        raise ValidationError(target, data)
+        raise ValidationError(target, data, path=path)
 
 
-def parse_int(validator: ValidatorProtocol, target: type[int], data: object) -> int:
+def parse_int(
+    validator: ValidatorProtocol, target: type[int], data: object, path: str
+) -> int:
     """Validate that data is an int (not a bool).
 
     Exposed for composition in custom handlers.
     """
     # Reject bool explicitly - even though bool is a subclass of int
     if type(data) is bool:
-        raise ValidationError(target, data)
+        raise ValidationError(target, data, path=path)
 
     if type(data) is not int:
-        raise ValidationError(target, data)
+        raise ValidationError(target, data, path=path)
 
     return data
 
 
 def parse_float(
-    validator: ValidatorProtocol, target: type[float], data: object
+    validator: ValidatorProtocol, target: type[float], data: object, path: str
 ) -> float:
     """Validate that data is a float, or coerce from int.
 
@@ -190,7 +213,7 @@ def parse_float(
     """
     # Reject bool explicitly
     if type(data) is bool:
-        raise ValidationError(target, data)
+        raise ValidationError(target, data, path=path)
 
     # Accept float directly
     if type(data) is float:
@@ -200,44 +223,50 @@ def parse_float(
     if type(data) is int:
         return float(data)
 
-    raise ValidationError(target, data)
+    raise ValidationError(target, data, path=path)
 
 
-def parse_str(validator: ValidatorProtocol, target: type[str], data: object) -> str:
+def parse_str(
+    validator: ValidatorProtocol, target: type[str], data: object, path: str
+) -> str:
     """Validate that data is a str.
 
     Exposed for composition in custom handlers.
     """
     if type(data) is not str:
-        raise ValidationError(target, data)
+        raise ValidationError(target, data, path=path)
 
     return data
 
 
-def parse_bool(validator: ValidatorProtocol, target: type[bool], data: object) -> bool:
+def parse_bool(
+    validator: ValidatorProtocol, target: type[bool], data: object, path: str
+) -> bool:
     """Validate that data is a bool.
 
     Exposed for composition in custom handlers.
     """
     if type(data) is not bool:
-        raise ValidationError(target, data)
+        raise ValidationError(target, data, path=path)
 
     return data
 
 
-def parse_none(validator: ValidatorProtocol, target: type[None], data: object) -> None:
+def parse_none(
+    validator: ValidatorProtocol, target: type[None], data: object, path: str
+) -> None:
     """Validate that data is None.
 
     Exposed for composition in custom handlers.
     """
     if data is not None:
-        raise ValidationError(target, data)
+        raise ValidationError(target, data, path=path)
 
     return None
 
 
 def parse_list[T](
-    validator: ValidatorProtocol, target: type[list[T]], data: object
+    validator: ValidatorProtocol, target: type[list[T]], data: object, path: str
 ) -> list[T]:
     """Validate that data is a list or tuple, optionally validating elements.
 
@@ -250,7 +279,7 @@ def parse_list[T](
     Exposed for composition in custom handlers.
     """
     if not isinstance(data, (list, tuple)):
-        raise ValidationError(target, data)
+        raise ValidationError(target, data, path=path)
 
     # Check if parameterized (e.g., list[int] vs plain list)
     args = get_args(target)
@@ -260,11 +289,14 @@ def parse_list[T](
 
     # Validate each element against the element type
     element_type = args[0]
-    return [validator.validate(element_type, item) for item in data]
+    return [
+        validator._validate_at(element_type, item, f"{path}[{i}]")
+        for i, item in enumerate(data)
+    ]
 
 
 def parse_tuple[*Ts](
-    validator: ValidatorProtocol, target: type[tuple[*Ts]], data: object
+    validator: ValidatorProtocol, target: type[tuple[*Ts]], data: object, path: str
 ) -> tuple[*Ts]:
     """Validate that data is a tuple or list, optionally validating elements.
 
@@ -276,7 +308,7 @@ def parse_tuple[*Ts](
     Exposed for composition in custom handlers.
     """
     if not isinstance(data, (list, tuple)):
-        raise ValidationError(target, data)
+        raise ValidationError(target, data, path=path)
 
     args = get_args(target)
     if not args:
@@ -287,21 +319,28 @@ def parse_tuple[*Ts](
     if len(args) == 2 and args[1] is Ellipsis:
         element_type = args[0]
         return cast(
-            tuple[*Ts], tuple(validator.validate(element_type, item) for item in data)
+            tuple[*Ts],
+            tuple(
+                validator._validate_at(element_type, item, f"{path}[{i}]")
+                for i, item in enumerate(data)
+            ),
         )
 
     # Fixed-length tuple[T1, T2, ...] - validate length and each element
     if len(data) != len(args):
-        raise ValidationError(target, data)
+        raise ValidationError(target, data, path=path)
 
     return cast(
         tuple[*Ts],
-        tuple(validator.validate(t, item) for t, item in zip(args, data, strict=True)),
+        tuple(
+            validator._validate_at(t, item, f"{path}[{i}]")
+            for i, (t, item) in enumerate(zip(args, data, strict=True))
+        ),
     )
 
 
 def parse_dict[K, V](
-    validator: ValidatorProtocol, target: type[dict[K, V]], data: object
+    validator: ValidatorProtocol, target: type[dict[K, V]], data: object, path: str
 ) -> dict[K, V]:
     """Validate that data is a Mapping or dataclass instance.
 
@@ -316,7 +355,7 @@ def parse_dict[K, V](
     """
     mapping = _coerce_to_mapping(data)
     if mapping is None:
-        raise ValidationError(target, data)
+        raise ValidationError(target, data, path=path)
 
     args = get_args(target)
     if not args:
@@ -325,14 +364,19 @@ def parse_dict[K, V](
 
     # Parameterized dict[K, V] - validate keys and values
     key_type, value_type = args
-    return {
-        validator.validate(key_type, k): validator.validate(value_type, v)
-        for k, v in mapping.items()
-    }
+    result: dict[K, V] = {}
+    for k, v in mapping.items():
+        # Keys don't get a path (they're the path segment, not a location)
+        validated_key = validator._validate_at(key_type, k, path)
+        # Values get the key as path segment
+        key_path = f"{path}.{k}" if path else f".{k}"
+        validated_value = validator._validate_at(value_type, v, key_path)
+        result[validated_key] = validated_value
+    return result
 
 
 def parse_set[T](
-    validator: ValidatorProtocol, target: type[set[T]], data: object
+    validator: ValidatorProtocol, target: type[set[T]], data: object, path: str
 ) -> set[T]:
     """Validate that data is a set or frozenset, optionally validating elements.
 
@@ -347,7 +391,7 @@ def parse_set[T](
     Exposed for composition in custom handlers.
     """
     if not isinstance(data, (set, frozenset)):
-        raise ValidationError(target, data)
+        raise ValidationError(target, data, path=path)
 
     args = get_args(target)
     if not args:
@@ -355,12 +399,13 @@ def parse_set[T](
         return cast(set[T], set(data))
 
     # Validate each element against the element type
+    # Sets are unordered, so we can't provide meaningful indices
     element_type = args[0]
-    return {validator.validate(element_type, item) for item in data}
+    return {validator._validate_at(element_type, item, path) for item in data}
 
 
 def parse_frozenset[T](
-    validator: ValidatorProtocol, target: type[frozenset[T]], data: object
+    validator: ValidatorProtocol, target: type[frozenset[T]], data: object, path: str
 ) -> frozenset[T]:
     """Validate that data is a set or frozenset, optionally validating elements.
 
@@ -372,7 +417,7 @@ def parse_frozenset[T](
     Exposed for composition in custom handlers.
     """
     if not isinstance(data, (set, frozenset)):
-        raise ValidationError(target, data)
+        raise ValidationError(target, data, path=path)
 
     args = get_args(target)
     if not args:
@@ -380,12 +425,13 @@ def parse_frozenset[T](
         return cast(frozenset[T], frozenset(data))
 
     # Validate each element against the element type
+    # Sets are unordered, so we can't provide meaningful indices
     element_type = args[0]
-    return frozenset(validator.validate(element_type, item) for item in data)
+    return frozenset(validator._validate_at(element_type, item, path) for item in data)
 
 
 def parse_typed_dict[T](
-    validator: ValidatorProtocol, target: type[T], data: object
+    validator: ValidatorProtocol, target: type[T], data: object, path: str
 ) -> T:
     """Validate that data matches a TypedDict schema.
 
@@ -399,7 +445,7 @@ def parse_typed_dict[T](
     """
     mapping = _coerce_to_str_mapping(data)
     if mapping is None:
-        raise ValidationError(target, data)
+        raise ValidationError(target, data, path=path)
 
     # Get type hints and required/optional keys
     hints = get_type_hints(target)
@@ -426,7 +472,8 @@ def parse_typed_dict[T](
     result: dict[str, Any] = {}
     for key in data_keys:
         value_type = hints[key]
-        result[key] = validator.validate(value_type, mapping[key])
+        key_path = f"{path}.{key}" if path else f".{key}"
+        result[key] = validator._validate_at(value_type, mapping[key], key_path)
 
     return cast(T, result)
 
@@ -481,7 +528,7 @@ def _coerce_to_str_mapping(
 
 
 def parse_namedtuple[T](
-    validator: ValidatorProtocol, target: type[T], data: object
+    validator: ValidatorProtocol, target: type[T], data: object, path: str
 ) -> T:
     """Validate that data matches a NamedTuple schema and construct it.
 
@@ -520,7 +567,10 @@ def parse_namedtuple[T](
         validated: dict[str, Any] = {}
         for field in fields:
             if field in data_keys:
-                validated[field] = validator.validate(hints[field], mapping[field])
+                field_path = f"{path}.{field}" if path else f".{field}"
+                validated[field] = validator._validate_at(
+                    hints[field], mapping[field], field_path
+                )
             # Fields not in data_keys have defaults; omit them so NamedTuple uses its default
 
         return target(**validated)
@@ -528,17 +578,18 @@ def parse_namedtuple[T](
     if isinstance(data, (list, tuple)):
         # Positional construction path - length must match exactly
         if len(data) != len(fields):
-            raise ValidationError(target, data)
+            raise ValidationError(target, data, path=path)
         validated_items = [
-            validator.validate(hints[field], item) for field, item in zip(fields, data)
+            validator._validate_at(hints[field], item, f"{path}[{i}]")
+            for i, (field, item) in enumerate(zip(fields, data))
         ]
         return target(*validated_items)
 
-    raise ValidationError(target, data)
+    raise ValidationError(target, data, path=path)
 
 
 def parse_dataclass[T](
-    validator: ValidatorProtocol, target: type[T], data: object
+    validator: ValidatorProtocol, target: type[T], data: object, path: str
 ) -> T:
     """Validate that data matches a dataclass schema and construct it.
 
@@ -556,7 +607,7 @@ def parse_dataclass[T](
     """
     mapping = _coerce_to_mapping(data)
     if mapping is None:
-        raise ValidationError(target, data)
+        raise ValidationError(target, data, path=path)
 
     hints = get_type_hints(target)
     fields = {f.name: f for f in dataclasses.fields(cast(type, target))}
@@ -584,12 +635,15 @@ def parse_dataclass[T](
     # Validate and coerce each provided field
     validated: dict[str, Any] = {}
     for key in data_keys:
-        validated[key] = validator.validate(hints[key], mapping[key])
+        key_path = f"{path}.{key}" if path else f".{key}"
+        validated[key] = validator._validate_at(hints[key], mapping[key], key_path)
 
     return target(**validated)
 
 
-def parse_union(validator: ValidatorProtocol, target: type[Any], data: object) -> Any:
+def parse_union(
+    validator: ValidatorProtocol, target: type[Any], data: object, path: str
+) -> Any:
     """Validate that data matches one of the types in the Union.
 
     Types are tried in declaration order. The first type that successfully
@@ -602,20 +656,22 @@ def parse_union(validator: ValidatorProtocol, target: type[Any], data: object) -
     args = get_args(target)
     if not args:
         # Shouldn't happen for valid Union types, but handle gracefully
-        raise ValidationError(target, data)
+        raise ValidationError(target, data, path=path)
 
     # Try each type in order
     for union_type in args:
         try:
-            return validator.validate(union_type, data)
+            return validator._validate_at(union_type, data, path)
         except ValidationError:
             continue
 
     # None matched - raise error
-    raise ValidationError(target, data)
+    raise ValidationError(target, data, path=path)
 
 
-def parse_literal(validator: ValidatorProtocol, target: type[Any], data: object) -> Any:
+def parse_literal(
+    validator: ValidatorProtocol, target: type[Any], data: object, path: str
+) -> Any:
     """Validate that data is one of the exact values in a Literal type.
 
     Uses strict matching: both value and type must match. No coercion.
@@ -628,10 +684,12 @@ def parse_literal(validator: ValidatorProtocol, target: type[Any], data: object)
     for val in allowed:
         if type(data) is type(val) and data == val:
             return data
-    raise ValidationError(target, data)
+    raise ValidationError(target, data, path=path)
 
 
-def parse_any(validator: ValidatorProtocol, target: type[Any], data: object) -> Any:
+def parse_any(
+    validator: ValidatorProtocol, target: type[Any], data: object, path: str
+) -> Any:
     """Accept any data without validation.
 
     Exposed for composition in custom handlers.

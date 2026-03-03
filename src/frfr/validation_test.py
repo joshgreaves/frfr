@@ -486,6 +486,25 @@ class TestValidateList:
             validator.validate(list[int], [1, True, 3])
         assert "expected int, got bool" in str(exc_info.value)
 
+    # Error path tests
+    def test_error_path_shows_index(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(list[int], [1, 2, "bad", 4])
+        assert exc_info.value.path == "[2]"
+        assert "[2] - expected int" in str(exc_info.value)
+
+    def test_error_path_first_element(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(list[int], ["bad", 2, 3])
+        assert exc_info.value.path == "[0]"
+        assert "[0] - expected int" in str(exc_info.value)
+
+    def test_error_path_nested_list(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(list[list[int]], [[1, 2], [3, "bad"]])
+        assert exc_info.value.path == "[1][1]"
+        assert "[1][1] - expected int" in str(exc_info.value)
+
 
 class TestValidateTuple:
     """Tests for tuple validation."""
@@ -597,6 +616,25 @@ class TestValidateTuple:
         with pytest.raises(validator.ValidationError) as exc_info:
             validator.validate(tuple[int, ...], (1, True, 3))
         assert "expected int, got bool" in str(exc_info.value)
+
+    # Error path tests
+    def test_error_path_homogeneous_tuple(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(tuple[int, ...], (1, "bad", 3))
+        assert exc_info.value.path == "[1]"
+        assert "[1] - expected int" in str(exc_info.value)
+
+    def test_error_path_fixed_tuple(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(tuple[int, str, bool], (1, "ok", "not bool"))
+        assert exc_info.value.path == "[2]"
+        assert "[2] - expected bool" in str(exc_info.value)
+
+    def test_error_path_fixed_tuple_first_element(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(tuple[int, str], ("bad", "ok"))
+        assert exc_info.value.path == "[0]"
+        assert "[0] - expected int" in str(exc_info.value)
 
 
 class TestValidateDict:
@@ -725,6 +763,19 @@ class TestValidateDict:
             validator.validate(dict[int, str], {True: "a"})
         assert "expected int, got bool" in str(exc_info.value)
 
+    # Error path tests
+    def test_error_path_shows_key(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(dict[str, int], {"a": 1, "b": "bad"})
+        assert exc_info.value.path == ".b"
+        assert ".b - expected int" in str(exc_info.value)
+
+    def test_error_path_nested_dict(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(dict[str, dict[str, int]], {"outer": {"inner": "bad"}})
+        assert exc_info.value.path == ".outer.inner"
+        assert ".outer.inner - expected int" in str(exc_info.value)
+
 
 class TestValidateTypedDict:
     """Tests for TypedDict validation."""
@@ -793,6 +844,22 @@ class TestValidateTypedDict:
         with pytest.raises(validator.ValidationError) as exc_info:
             validator.validate(UserTypedDict, "not a dict")
         assert "expected UserTypedDict, got str" in str(exc_info.value)
+
+    # Error path tests
+    def test_error_path_shows_field_name(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(UserTypedDict, {"name": "alice", "age": "bad"})
+        assert exc_info.value.path == ".age"
+        assert ".age - expected int" in str(exc_info.value)
+
+    def test_error_path_nested_typed_dict(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(
+                PersonTypedDict,
+                {"name": "alice", "address": {"city": "NYC", "zip_code": 12345}},
+            )
+        assert exc_info.value.path == ".address.zip_code"
+        assert ".address.zip_code - expected str" in str(exc_info.value)
 
 
 class TestValidateUnion:
@@ -922,6 +989,25 @@ class TestValidateUnion:
     def test_rejects_none_when_not_in_union(self) -> None:
         with pytest.raises(validator.ValidationError):
             validator.validate(int | str, None)  # type: ignore[arg-type]
+
+    # Error path tests
+    def test_error_path_preserved_in_nested_union(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(
+                list[int | str],
+                [1, "two", ["not int or str"]],  # type: ignore[list-item]
+            )
+        assert exc_info.value.path == "[2]"
+        assert "[2] - expected" in str(exc_info.value)
+
+    def test_error_path_optional_in_dict(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(
+                dict[str, int | None],
+                {"a": 1, "b": "bad"},
+            )
+        assert exc_info.value.path == ".b"
+        assert ".b - expected" in str(exc_info.value)
 
 
 class TestValidateSet:
@@ -1304,6 +1390,22 @@ class TestValidateDataclass:
         with pytest.raises(validator.ValidationError):
             validator.validate(UserDataclass, [("name", "bestie"), ("age", 25)])
 
+    # Error path tests
+    def test_error_path_shows_field_name(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(UserDataclass, {"name": "alice", "age": "bad"})
+        assert exc_info.value.path == ".age"
+        assert ".age - expected int" in str(exc_info.value)
+
+    def test_error_path_nested_dataclass(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(
+                PersonDataclass,
+                {"name": "alice", "address": {"city": 123, "zip_code": "12345"}},
+            )
+        assert exc_info.value.path == ".address.city"
+        assert ".address.city - expected str" in str(exc_info.value)
+
 
 class TestValidateNamedTuple:
     """Tests for NamedTuple validation.
@@ -1435,6 +1537,34 @@ class TestValidateNamedTuple:
             validator.validate(UserNamedTuple, "not a tuple or dict")
         assert "expected UserNamedTuple, got str" in str(exc_info.value)
 
+    # Error path tests
+    def test_error_path_from_dict_shows_field(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(UserNamedTuple, {"name": "alice", "age": "bad"})
+        assert exc_info.value.path == ".age"
+        assert ".age - expected int" in str(exc_info.value)
+
+    def test_error_path_from_tuple_shows_index(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(UserNamedTuple, ("alice", "bad"))
+        assert exc_info.value.path == "[1]"
+        assert "[1] - expected int" in str(exc_info.value)
+
+    def test_error_path_nested_from_dict(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(
+                PersonNamedTuple,
+                {"name": "alice", "address": {"city": 123, "zip_code": "12345"}},
+            )
+        assert exc_info.value.path == ".address.city"
+        assert ".address.city - expected str" in str(exc_info.value)
+
+    def test_error_path_nested_from_tuple(self) -> None:
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(PersonNamedTuple, ("alice", (123, "12345")))
+        assert exc_info.value.path == "[1][0]"
+        assert "[1][0] - expected str" in str(exc_info.value)
+
 
 class TestValidationError:
     """Tests for ValidationError formatting."""
@@ -1455,3 +1585,128 @@ class TestValidationError:
         message = str(error)
         assert not message.startswith(" - ")
         assert "expected int" in message
+
+    def test_root_level_validation_error_has_no_path(self) -> None:
+        """Root level errors should have empty path."""
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(int, "not an int")
+        assert exc_info.value.path == ""
+        # Message should not have path prefix
+        assert str(exc_info.value).startswith("expected int")
+
+
+class TestValidationErrorPathsComplex:
+    """Tests for error path tracking through complex composed types.
+
+    These tests cover combinations of multiple types nested together.
+    """
+
+    def test_list_of_dicts_error(self) -> None:
+        """Error in list of dicts should show [index].key."""
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(
+                list[dict[str, int]],
+                [{"a": 1}, {"b": "bad"}],
+            )
+        assert exc_info.value.path == "[1].b"
+        assert "[1].b - expected int" in str(exc_info.value)
+
+    def test_dict_of_lists_error(self) -> None:
+        """Error in dict of lists should show .key[index]."""
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(
+                dict[str, list[int]],
+                {"nums": [1, 2, "bad"]},
+            )
+        assert exc_info.value.path == ".nums[2]"
+        assert ".nums[2] - expected int" in str(exc_info.value)
+
+    def test_deeply_nested_structure_error(self) -> None:
+        """Error in deeply nested structure."""
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(
+                dict[str, list[dict[str, list[int]]]],
+                {"users": [{"scores": [1, 2, "bad"]}]},
+            )
+        assert exc_info.value.path == ".users[0].scores[2]"
+        assert ".users[0].scores[2] - expected int" in str(exc_info.value)
+
+    def test_deeply_nested_typed_dict(self) -> None:
+        """Test path tracking through deeply nested TypedDicts."""
+
+        class ItemTypedDict(TypedDict):
+            id: int
+            tags: list[str]
+
+        class ContainerTypedDict(TypedDict):
+            items: list[ItemTypedDict]
+
+        data = {
+            "items": [
+                {"id": 1, "tags": ["a", "b"]},
+                {"id": 2, "tags": ["c", 123]},  # Error here
+            ]
+        }
+
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(ContainerTypedDict, data)
+        assert exc_info.value.path == ".items[1].tags[1]"
+        assert ".items[1].tags[1] - expected str" in str(exc_info.value)
+
+    def test_list_of_dataclasses_error(self) -> None:
+        """Error in list of dataclasses."""
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(
+                list[UserDataclass],
+                [
+                    {"name": "alice", "age": 25},
+                    {"name": "bob", "age": "thirty"},
+                ],
+            )
+        assert exc_info.value.path == "[1].age"
+        assert "[1].age - expected int" in str(exc_info.value)
+
+    def test_dict_of_namedtuples_error(self) -> None:
+        """Error in dict of NamedTuples."""
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(
+                dict[str, UserNamedTuple],
+                {
+                    "user1": {"name": "alice", "age": 25},
+                    "user2": {"name": "bob", "age": "thirty"},
+                },
+            )
+        assert exc_info.value.path == ".user2.age"
+        assert ".user2.age - expected int" in str(exc_info.value)
+
+    def test_tuple_of_typed_dicts_error(self) -> None:
+        """Error in tuple of TypedDicts."""
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(
+                tuple[UserTypedDict, UserTypedDict],
+                (
+                    {"name": "alice", "age": 25},
+                    {"name": "bob", "age": "thirty"},
+                ),
+            )
+        assert exc_info.value.path == "[1].age"
+        assert "[1].age - expected int" in str(exc_info.value)
+
+    def test_literal_in_nested_typed_dict(self) -> None:
+        """Literal error should preserve the path context."""
+
+        class StatusTypedDict(TypedDict):
+            name: str
+            status: Literal["active", "inactive"]
+
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(StatusTypedDict, {"name": "test", "status": "bad"})
+        assert exc_info.value.path == ".status"
+        assert ".status - expected" in str(exc_info.value)
+
+    def test_triple_nested_lists(self) -> None:
+        """Error in triple nested lists."""
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(list[list[list[int]]], [[[1]], [[2], [3, "bad"]]])
+        assert exc_info.value.path == "[1][1][1]"
+        assert "[1][1][1] - expected int" in str(exc_info.value)

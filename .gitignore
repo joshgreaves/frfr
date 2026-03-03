@@ -73,5 +73,8 @@ venv.bak/
 # Ruff
 .ruff_cache/
 
+# Claude Code
+.claude/
+
 # Local development notes (not for git)
 local/
