@@ -790,6 +790,27 @@ class TestValidateDict:
         assert exc_info.value.path == ".outer.bad[key]"
         assert ".outer.bad[key] - expected int" in str(exc_info.value)
 
+    def test_error_path_non_identifier_key_uses_brackets(self) -> None:
+        """Non-identifier keys should use bracket notation."""
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(dict[str, int], {"a.b": "bad"})
+        assert exc_info.value.path == "['a.b']"
+        assert "['a.b'] - expected int" in str(exc_info.value)
+
+    def test_error_path_key_with_spaces_uses_brackets(self) -> None:
+        """Keys with spaces should use bracket notation."""
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(dict[str, int], {"my key": "bad"})
+        assert exc_info.value.path == "['my key']"
+        assert "['my key'] - expected int" in str(exc_info.value)
+
+    def test_error_path_numeric_key_uses_brackets(self) -> None:
+        """Numeric keys should use bracket notation."""
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(dict[int, int], {123: "bad"})
+        assert exc_info.value.path == "[123]"
+        assert "[123] - expected int" in str(exc_info.value)
+
 
 class TestValidateTypedDict:
     """Tests for TypedDict validation."""

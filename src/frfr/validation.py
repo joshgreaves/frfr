@@ -377,8 +377,10 @@ def parse_dict[K, V](
     key_type, value_type = args
     result: dict[K, V] = {}
     for k, v in mapping.items():
-        # Keys get path like .keyvalue[key] to indicate key validation failed
-        key_path_segment = f"{path}.{k}" if path else f".{k}"
+        # Build path segment: .key for identifiers, [repr(key)] for others
+        key_segment = _format_key_path_segment(k)
+        key_path_segment = f"{path}{key_segment}" if path else key_segment
+        # Keys get [key] suffix to indicate key validation failed
         validated_key = validator._validate_at(key_type, k, f"{key_path_segment}[key]")
         # Values get the key as path segment
         validated_value = validator._validate_at(value_type, v, key_path_segment)
@@ -496,6 +498,17 @@ def parse_typed_dict[T](
 def _is_namedtuple(t: object) -> bool:
     """Return True if t is a NamedTuple class (not an instance)."""
     return isinstance(t, type) and issubclass(t, tuple) and hasattr(t, "_fields")
+
+
+def _format_key_path_segment(key: object) -> str:
+    """Format a dict key as a path segment.
+
+    Identifier-like string keys use dot notation: .foo
+    Other keys use bracket notation: ["a.b"], [123], ["my key"]
+    """
+    if isinstance(key, str) and key.isidentifier():
+        return f".{key}"
+    return f"[{key!r}]"
 
 
 def _is_dataclass_type(t: object) -> bool:
