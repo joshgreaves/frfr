@@ -21,19 +21,30 @@ from typing import (
 class ValidationError(Exception):
     """Raised when validation fails."""
 
-    def __init__(self, expected: type, actual: object, path: str = "") -> None:
+    def __init__(
+        self,
+        expected: type,
+        actual: object,
+        path: str = "",
+        message: str | None = None,
+    ) -> None:
         self.expected = expected
         self.actual = actual
         self.path = path
-        actual_type = type(actual).__name__
-        actual_repr = repr(actual)
         location = f"{path} - " if path else ""
-        # Handle Union types and other special forms that don't have __name__
-        expected_name = getattr(expected, "__name__", None) or str(expected)
-        message = (
-            f"{location}expected {expected_name}, got {actual_type} ({actual_repr})"
-        )
-        super().__init__(message)
+        if message is not None:
+            # Custom message provided (e.g., "missing required key")
+            full_message = f"{location}{message}"
+        else:
+            # Auto-generate message from expected/actual
+            actual_type = type(actual).__name__
+            actual_repr = repr(actual)
+            # Handle Union types and other special forms that don't have __name__
+            expected_name = getattr(expected, "__name__", None) or str(expected)
+            full_message = (
+                f"{location}expected {expected_name}, got {actual_type} ({actual_repr})"
+            )
+        super().__init__(full_message)
 
 
 class ValidatorProtocol(Protocol):
@@ -460,13 +471,17 @@ def parse_typed_dict[T](
     missing = required_keys - data_keys
     if missing:
         missing_key = next(iter(missing))
-        raise ValidationError(target, mapping, path=f"missing key: {missing_key}")
+        key_path = f"{path}.{missing_key}" if path else f".{missing_key}"
+        raise ValidationError(
+            target, mapping, path=key_path, message="missing required key"
+        )
 
     # Check for extra keys
     extra = data_keys - all_keys
     if extra:
         extra_key = next(iter(extra))
-        raise ValidationError(target, mapping, path=f"unexpected key: {extra_key}")
+        key_path = f"{path}.{extra_key}" if path else f".{extra_key}"
+        raise ValidationError(target, mapping, path=key_path, message="unexpected key")
 
     # Validate each value against its type hint
     result: dict[str, Any] = {}
@@ -557,12 +572,18 @@ def parse_namedtuple[T](
         missing = required_keys - data_keys
         if missing:
             missing_key = next(iter(missing))
-            raise ValidationError(target, mapping, path=f"missing field: {missing_key}")
+            field_path = f"{path}.{missing_key}" if path else f".{missing_key}"
+            raise ValidationError(
+                target, mapping, path=field_path, message="missing required field"
+            )
 
         extra = data_keys - all_keys
         if extra:
             extra_key = next(iter(extra))
-            raise ValidationError(target, mapping, path=f"unexpected key: {extra_key}")
+            field_path = f"{path}.{extra_key}" if path else f".{extra_key}"
+            raise ValidationError(
+                target, mapping, path=field_path, message="unexpected field"
+            )
 
         validated: dict[str, Any] = {}
         for field in fields:
@@ -624,13 +645,19 @@ def parse_dataclass[T](
     missing = required_keys - data_keys
     if missing:
         missing_key = next(iter(missing))
-        raise ValidationError(target, mapping, path=f"missing field: {missing_key}")
+        field_path = f"{path}.{missing_key}" if path else f".{missing_key}"
+        raise ValidationError(
+            target, mapping, path=field_path, message="missing required field"
+        )
 
     # Check for extra keys
     extra = data_keys - all_keys
     if extra:
         extra_key = next(iter(extra))
-        raise ValidationError(target, mapping, path=f"unexpected key: {extra_key}")
+        field_path = f"{path}.{extra_key}" if path else f".{extra_key}"
+        raise ValidationError(
+            target, mapping, path=field_path, message="unexpected field"
+        )
 
     # Validate and coerce each provided field
     validated: dict[str, Any] = {}

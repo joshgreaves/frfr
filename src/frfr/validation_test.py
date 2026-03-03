@@ -851,8 +851,11 @@ class TestValidateTypedDict:
 
     def test_rejects_extra_keys(self) -> None:
         with pytest.raises(validator.ValidationError) as exc_info:
-            validator.validate(UserTypedDict, {"name": "bestie", "extra": "field"})
+            validator.validate(
+                UserTypedDict, {"name": "bestie", "age": 25, "extra": "field"}
+            )
         assert "extra" in str(exc_info.value)
+        assert "unexpected key" in str(exc_info.value)
 
     def test_rejects_non_mapping(self) -> None:
         with pytest.raises(validator.ValidationError) as exc_info:
