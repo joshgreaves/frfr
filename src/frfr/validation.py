@@ -760,11 +760,11 @@ class Validator:
         """
         if self._frozen:
             raise RuntimeError("Cannot register on a frozen validator")
-        self._handlers[target] = handler
         # Compiled closures capture child validators at build time, so a new
         # handler for (e.g.) int would silently be ignored by any already-compiled
         # list[int] validator. Clearing the cache forces a full recompile on next use.
         with self._compiled_lock:
+            self._handlers[target] = handler
             self._compiled.clear()
             self._compiled_refs.clear()
             self._compiling.clear()
@@ -791,11 +791,11 @@ class Validator:
         """
         if self._frozen:
             raise RuntimeError("Cannot register on a frozen validator")
-        self._predicate_handlers.insert(0, (predicate, handler))
         # Same reasoning as register_type_handler: compiled closures capture
         # child validators at build time, so a new predicate handler must
         # invalidate the cache to take effect on already-seen types.
         with self._compiled_lock:
+            self._predicate_handlers.insert(0, (predicate, handler))
             self._compiled.clear()
             self._compiled_refs.clear()
             self._compiling.clear()
@@ -847,10 +847,19 @@ class Validator:
         that defers the real lookup to call time (by which point compilation of
         the outer type will have finished and the real fn will be in the cache).
 
-        Thread-safe: uses _compiled_lock (RLock) to serialize access.
+        Thread-safe: uses double-checked locking. The fast path (cache hit) avoids
+        the lock entirely since dict.get() is atomic in CPython due to the GIL.
         """
+        tid = id(target)
+
+        # Fast path: check cache without lock (dict.get is atomic in CPython)
+        fn = self._compiled.get(tid)
+        if fn is not None:
+            return fn
+
+        # Slow path: acquire lock for compilation
         with self._compiled_lock:
-            tid = id(target)
+            # Double-check after acquiring lock
             fn = self._compiled.get(tid)
             if fn is not None:
                 return fn
