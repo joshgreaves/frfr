@@ -1,7 +1,5 @@
 """Tests for the core validation logic."""
 
-# TODO: Add tests for custom Validator instances (register, override handlers, composition)
-
 import collections
 import dataclasses
 import types
@@ -1793,6 +1791,157 @@ class TestValidationErrorPathsComplex:
             validator.validate(list[list[list[int]]], [[[1]], [[2], [3, "bad"]]])
         assert exc_info.value.path == "[1][1][1]"
         assert "[1][1][1] - expected int" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# Custom Validator tests
+# ---------------------------------------------------------------------------
+
+
+class TestCustomValidator:
+    """Tests for custom Validator instances: registration, overrides, composition."""
+
+    def test_default_validator_is_frozen(self) -> None:
+        """The module-level validate() uses a frozen validator that rejects registration."""
+        v = validator.Validator(frozen=True)
+        with pytest.raises(RuntimeError, match="frozen"):
+            v.register_type_handler(int, validator.parse_int)
+
+    def test_register_new_type(self) -> None:
+        """A custom handler for an unknown type is called during validation."""
+
+        class Celsius:
+            def __init__(self, value: float) -> None:
+                self.value = value
+
+        def parse_celsius(
+            v: validator.ValidatorProtocol, target: type, data: object, path: str
+        ) -> Celsius:
+            if not isinstance(data, int | float):
+                raise validator.ValidationError(target, data, path=path)
+            return Celsius(float(data))
+
+        v = validator.Validator()
+        v.register_type_handler(Celsius, parse_celsius)
+        result = v.validate(Celsius, 100)
+        assert isinstance(result, Celsius)
+        assert result.value == 100.0
+
+    def test_override_builtin_handler(self) -> None:
+        """A registered handler for int replaces the built-in one."""
+
+        def coercing_int(
+            v: validator.ValidatorProtocol, target: type, data: object, path: str
+        ) -> int:
+            try:
+                return int(data)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                raise validator.ValidationError(target, data, path=path)
+
+        v = validator.Validator()
+        v.register_type_handler(int, coercing_int)
+        assert v.validate(int, "42") == 42
+        assert v.validate(int, 3.9) == 3
+        assert v.validate(int, True) == 1
+
+    def test_override_does_not_affect_default_validator(self) -> None:
+        """Overriding a handler on a custom instance leaves the default validator unchanged."""
+        v = validator.Validator()
+        v.register_type_handler(int, lambda _v, _t, data, _p: 999)  # type: ignore[arg-type, return-value]
+        assert v.validate(int, 1) == 999
+        assert validator.validate(int, 1) == 1
+
+    def test_handler_receives_validator_for_recursion(self) -> None:
+        """Custom handler can call validator.validate() to recurse into nested types."""
+
+        @dataclasses.dataclass
+        class Tagged:
+            value: int
+            tag: str
+
+        def parse_tagged(
+            v: validator.ValidatorProtocol, target: type, data: object, path: str
+        ) -> Tagged:
+            if not isinstance(data, dict):
+                raise validator.ValidationError(target, data, path=path)
+            return Tagged(
+                value=v._validate_at(int, data.get("value"), f"{path}.value"),  # type: ignore[arg-type]
+                tag=v._validate_at(str, data.get("tag"), f"{path}.tag"),  # type: ignore[arg-type]
+            )
+
+        v = validator.Validator()
+        v.register_type_handler(Tagged, parse_tagged)
+        result = v.validate(Tagged, {"value": 7, "tag": "hello"})
+        assert result.value == 7
+        assert result.tag == "hello"
+
+    def test_handler_recursion_uses_overridden_handlers(self) -> None:
+        """When a custom handler recurses, it uses the same validator's handlers."""
+        call_log: list[str] = []
+
+        def tracking_str(
+            v: validator.ValidatorProtocol, target: type, data: object, path: str
+        ) -> str:
+            call_log.append(str(data))
+            return validator.parse_str(v, target, data, path)  # type: ignore[arg-type]
+
+        v = validator.Validator()
+        v.register_type_handler(str, tracking_str)
+        v.validate(list[str], ["a", "b", "c"])
+        assert call_log == ["a", "b", "c"]
+
+    def test_register_predicate_handler(self) -> None:
+        """A predicate handler is called for any type matching the predicate."""
+
+        class MyMeta(type):
+            pass
+
+        class MyA(metaclass=MyMeta):
+            pass
+
+        class MyB(metaclass=MyMeta):
+            pass
+
+        def parse_mymeta(
+            v: validator.ValidatorProtocol, target: type, data: object, path: str
+        ) -> object:
+            return target()
+
+        v = validator.Validator()
+        v.register_predicate_handler(lambda t: isinstance(t, MyMeta), parse_mymeta)
+        assert isinstance(v.validate(MyA, {}), MyA)  # type: ignore[arg-type]
+        assert isinstance(v.validate(MyB, {}), MyB)  # type: ignore[arg-type]
+
+    def test_predicate_handler_overrides_builtin(self) -> None:
+        """A predicate handler registered last takes priority over built-in predicate handlers."""
+        seen: list[type] = []
+
+        def spy_dataclass(
+            v: validator.ValidatorProtocol, target: type, data: object, path: str
+        ) -> object:
+            seen.append(target)
+            return validator.parse_dataclass(v, target, data, path)
+
+        @dataclasses.dataclass
+        class Point:
+            x: int
+            y: int
+
+        v = validator.Validator()
+        v.register_predicate_handler(dataclasses.is_dataclass, spy_dataclass)
+        result = v.validate(Point, {"x": 1, "y": 2})  # type: ignore[arg-type]
+        assert seen == [Point]
+        assert result == Point(x=1, y=2)
+
+    def test_unfrozen_validator_has_all_builtins(self) -> None:
+        """A fresh custom Validator has all built-in handlers."""
+        v = validator.Validator()
+        assert v.validate(int, 1) == 1
+        assert v.validate(str, "hi") == "hi"
+        assert v.validate(list[int], [1, 2, 3]) == [1, 2, 3]
+        assert v.validate(UserDataclass, {"name": "alice", "age": 25}) == UserDataclass(
+            "alice", 25
+        )
 
 
 # ---------------------------------------------------------------------------
