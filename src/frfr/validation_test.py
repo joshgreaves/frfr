@@ -1437,6 +1437,36 @@ class TestValidateDataclass:
         assert result.name == "bestie"
         assert result.age == 25
 
+    def test_dataclass_init_false_fields_are_ignored(self) -> None:
+        """Fields with init=False are excluded from validation and construction."""
+
+        @dataclasses.dataclass
+        class WithComputed:
+            value: int
+            doubled: int = dataclasses.field(init=False)
+
+            def __post_init__(self) -> None:
+                self.doubled = self.value * 2
+
+        result = validator.validate(WithComputed, {"value": 5})
+        assert result.value == 5
+        assert result.doubled == 10
+
+    def test_dataclass_init_false_field_in_input_is_rejected(self) -> None:
+        """Providing a value for an init=False field is treated as an unexpected field."""
+
+        @dataclasses.dataclass
+        class WithComputed:
+            value: int
+            doubled: int = dataclasses.field(init=False)
+
+            def __post_init__(self) -> None:
+                self.doubled = self.value * 2
+
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(WithComputed, {"value": 5, "doubled": 10})
+        assert "doubled" in str(exc_info.value)
+
     def test_namedtuple_instance_to_dataclass(self) -> None:
         user = UserNamedTuple(name="bestie", age=25)
         result = validator.validate(UserDataclass, user)
@@ -1646,6 +1676,39 @@ class TestValidateNamedTuple:
         assert exc_info.value.path == "[1][0]"
         assert "[1][0] - expected str" in str(exc_info.value)
 
+    # collections.namedtuple (untyped, no type hints)
+    def test_collections_namedtuple_from_dict(self) -> None:
+        """collections.namedtuple has no type hints, fields should be Any."""
+        Point = collections.namedtuple("Point", ["x", "y"])
+        result = validator.validate(Point, {"x": 1, "y": 2})
+        assert isinstance(result, Point)
+        assert result.x == 1
+        assert result.y == 2
+
+    def test_collections_namedtuple_from_tuple(self) -> None:
+        """collections.namedtuple from tuple input."""
+        Point = collections.namedtuple("Point", ["x", "y"])
+        result = validator.validate(Point, (3, 4))
+        assert isinstance(result, Point)
+        assert result.x == 3
+        assert result.y == 4
+
+    def test_collections_namedtuple_accepts_any_types(self) -> None:
+        """Untyped fields should accept any value (treated as Any)."""
+        Point = collections.namedtuple("Point", ["x", "y"])
+        result = validator.validate(Point, {"x": "hello", "y": [1, 2, 3]})
+        assert isinstance(result, Point)
+        assert result.x == "hello"
+        assert result.y == [1, 2, 3]
+
+    def test_collections_namedtuple_with_defaults(self) -> None:
+        """collections.namedtuple with defaults."""
+        Point = collections.namedtuple("Point", ["x", "y"], defaults=[0])
+        result = validator.validate(Point, {"x": 5})
+        assert isinstance(result, Point)
+        assert result.x == 5
+        assert result.y == 0
+
 
 class TestValidationError:
     """Tests for ValidationError formatting."""
@@ -1803,14 +1866,26 @@ class TestCustomValidator:
 
     def test_default_validator_is_frozen(self) -> None:
         """The module-level default validator rejects registration."""
+
+        def noop_int(
+            _v: validator.ValidatorProtocol, _t: type, data: object, _p: str
+        ) -> int:
+            return int(data)  # type: ignore[arg-type]
+
         with pytest.raises(RuntimeError, match="frozen"):
-            validator._DEFAULT_VALIDATOR.register_type_handler(int, validator.parse_int)
+            validator._DEFAULT_VALIDATOR.register_type_handler(int, noop_int)
 
     def test_explicit_frozen_validator_rejects_registration(self) -> None:
         """An explicitly frozen Validator instance rejects registration."""
+
+        def noop_int(
+            _v: validator.ValidatorProtocol, _t: type, data: object, _p: str
+        ) -> int:
+            return int(data)  # type: ignore[arg-type]
+
         v = validator.Validator(frozen=True)
         with pytest.raises(RuntimeError, match="frozen"):
-            v.register_type_handler(int, validator.parse_int)
+            v.register_type_handler(int, noop_int)
 
     def test_register_new_type(self) -> None:
         """A custom handler for an unknown type is called during validation."""
@@ -1888,7 +1963,9 @@ class TestCustomValidator:
             v: validator.ValidatorProtocol, target: type, data: object, path: str
         ) -> str:
             call_log.append(str(data))
-            return validator.parse_str(v, target, data, path)  # type: ignore[arg-type]
+            if type(data) is not str:
+                raise validator.ValidationError(target, data, path=path)
+            return data
 
         v = validator.Validator()
         v.register_type_handler(str, tracking_str)
@@ -1925,7 +2002,7 @@ class TestCustomValidator:
             v: validator.ValidatorProtocol, target: type, data: object, path: str
         ) -> object:
             seen.append(target)
-            return validator.parse_dataclass(v, target, data, path)
+            return validator.compile_dataclass(target, v._get_compiled)(data, path)  # type: ignore[attr-defined]
 
         @dataclasses.dataclass
         class Point:
@@ -1947,6 +2024,43 @@ class TestCustomValidator:
         assert v.validate(UserDataclass, {"name": "alice", "age": 25}) == UserDataclass(
             "alice", 25
         )
+
+    def test_register_type_handler_after_cache_invalidates(self) -> None:
+        """Registering a new type handler invalidates compiled cache for that type."""
+        v = validator.Validator()
+        # Warm the cache for int
+        assert v.validate(int, 5) == 5
+        # Override int handler after the cache is warm
+        v.register_type_handler(int, lambda _v, _t, data, _p: 999)
+        # The new handler should be used, not the cached one
+        assert v.validate(int, 5) == 999
+
+    def test_register_type_handler_after_cache_invalidates_composite(self) -> None:
+        """Registering a new handler for a child type invalidates composite compiled cache."""
+        v = validator.Validator()
+        # Warm the cache for list[int]
+        assert v.validate(list[int], [1, 2]) == [1, 2]
+        # Override int handler after the cache is warm
+        v.register_type_handler(int, lambda _v, _t, data, _p: 0)
+        # The compiled list[int] must be rebuilt to pick up the new int handler
+        assert v.validate(list[int], [1, 2]) == [0, 0]
+
+    def test_register_predicate_handler_after_cache_invalidates(self) -> None:
+        """Registering a new predicate handler invalidates compiled cache."""
+
+        @dataclasses.dataclass
+        class Box:
+            value: int
+
+        v = validator.Validator()
+        # Warm the cache for Box
+        assert v.validate(Box, {"value": 1}) == Box(value=1)
+        # Register a predicate handler that intercepts all dataclasses
+        v.register_predicate_handler(
+            dataclasses.is_dataclass, lambda _v, _t, _d, _p: "intercepted"
+        )
+        # The new predicate handler should take effect
+        assert v.validate(Box, {"value": 1}) == "intercepted"
 
 
 # ---------------------------------------------------------------------------
