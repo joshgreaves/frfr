@@ -517,6 +517,7 @@ def _is_namedtuple(t: object) -> bool:
     return isinstance(t, type) and issubclass(t, tuple) and hasattr(t, "_fields")
 
 
+@functools.cache
 def _format_key_path_segment(key: object) -> str:
     """Format a dict key as a path segment.
 
