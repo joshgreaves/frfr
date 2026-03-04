@@ -1802,10 +1802,17 @@ class TestCustomValidator:
     """Tests for custom Validator instances: registration, overrides, composition."""
 
     def test_default_validator_is_frozen(self) -> None:
-        """The module-level validate() uses a frozen validator that rejects registration."""
+        """The module-level default validator rejects registration."""
+        with pytest.raises(RuntimeError, match="frozen"):
+            validator._DEFAULT_VALIDATOR.register_type_handler(
+                int, lambda _v, _t, data, _p: data
+            )
+
+    def test_explicit_frozen_validator_rejects_registration(self) -> None:
+        """An explicitly frozen Validator instance rejects registration."""
         v = validator.Validator(frozen=True)
         with pytest.raises(RuntimeError, match="frozen"):
-            v.register_type_handler(int, lambda _v, _t, data, _p: data)  # type: ignore[arg-type]
+            v.register_type_handler(int, lambda _v, _t, data, _p: data)
 
     def test_register_new_type(self) -> None:
         """A custom handler for an unknown type is called during validation."""
@@ -1884,8 +1891,8 @@ class TestCustomValidator:
         ) -> str:
             call_log.append(str(data))
             if type(data) is not str:
-                raise validator.ValidationError(target, data, path=path)  # type: ignore[arg-type]
-            return data  # type: ignore[return-value]
+                raise validator.ValidationError(target, data, path=path)
+            return data
 
         v = validator.Validator()
         v.register_type_handler(str, tracking_str)
@@ -1976,7 +1983,9 @@ class TestCustomValidator:
         # Warm the cache for Box
         assert v.validate(Box, {"value": 1}) == Box(value=1)
         # Register a predicate handler that intercepts all dataclasses
-        v.register_predicate_handler(dataclasses.is_dataclass, lambda _v, _t, _d, _p: "intercepted")
+        v.register_predicate_handler(
+            dataclasses.is_dataclass, lambda _v, _t, _d, _p: "intercepted"
+        )
         # The new predicate handler should take effect
         assert v.validate(Box, {"value": 1}) == "intercepted"
 
