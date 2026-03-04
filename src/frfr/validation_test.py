@@ -111,6 +111,51 @@ class UserWithDefaultsNamedTuple(NamedTuple):
     active: bool = True
 
 
+# ---------------------------------------------------------------------------
+# Types for large-scale integration tests
+# ---------------------------------------------------------------------------
+
+
+class AuthorTypedDict(TypedDict):
+    id: int
+    username: str
+    display_name: str | None
+
+
+class CommentTypedDict(TypedDict):
+    id: int
+    author: AuthorTypedDict
+    body: str
+    score: int
+
+
+class PostTypedDict(TypedDict):
+    id: int
+    title: str
+    author: AuthorTypedDict
+    comments: list[CommentTypedDict]
+    stats: dict[str, int]
+
+
+class TagNamedTuple(NamedTuple):
+    id: int
+    name: str
+    slug: str
+
+
+@dataclasses.dataclass
+class CoordinateDataclass:
+    lat: float
+    lng: float
+
+
+@dataclasses.dataclass
+class RegionDataclass:
+    name: str
+    center: CoordinateDataclass
+    tags: list[TagNamedTuple]
+
+
 class TestValidateInt:
     """Tests for int validation."""
 
@@ -1748,3 +1793,217 @@ class TestValidationErrorPathsComplex:
             validator.validate(list[list[list[int]]], [[[1]], [[2], [3, "bad"]]])
         assert exc_info.value.path == "[1][1][1]"
         assert "[1][1][1] - expected int" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# Large-scale integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestLargeScaleIntegration:
+    """Integration tests with complex, deeply-nested real-world-style structures."""
+
+    def test_nested_typeddict_list_success(self) -> None:
+        """Large payload: list of posts with nested authors and comments validates fully."""
+        data = [
+            {
+                "id": 1,
+                "title": "Hello world",
+                "author": {"id": 1, "username": "alice", "display_name": "Alice"},
+                "comments": [
+                    {
+                        "id": 1,
+                        "author": {"id": 2, "username": "bob", "display_name": None},
+                        "body": "great post!",
+                        "score": 10,
+                    },
+                    {
+                        "id": 2,
+                        "author": {
+                            "id": 3,
+                            "username": "carol",
+                            "display_name": "Carol",
+                        },
+                        "body": "thanks for sharing",
+                        "score": 5,
+                    },
+                ],
+                "stats": {"views": 1000, "likes": 42, "shares": 7},
+            },
+            {
+                "id": 2,
+                "title": "Follow-up",
+                "author": {"id": 1, "username": "alice", "display_name": "Alice"},
+                "comments": [],
+                "stats": {"views": 200, "likes": 8, "shares": 1},
+            },
+        ]
+        result = validator.validate(list[PostTypedDict], data)
+        assert len(result) == 2
+        assert result[0]["id"] == 1
+        assert result[0]["author"]["username"] == "alice"
+        assert result[0]["author"]["display_name"] == "Alice"
+        assert len(result[0]["comments"]) == 2
+        assert result[0]["comments"][0]["author"]["display_name"] is None
+        assert result[0]["comments"][1]["author"]["display_name"] == "Carol"
+        assert result[0]["stats"]["views"] == 1000
+        assert result[1]["comments"] == []
+
+    def test_nested_typeddict_error_path(self) -> None:
+        """Error deep in nested TypedDicts reports the full path."""
+        data = [
+            {
+                "id": 1,
+                "title": "Post 1",
+                "author": {"id": 1, "username": "alice", "display_name": None},
+                "comments": [
+                    {
+                        "id": 1,
+                        "author": {"id": 2, "username": "bob", "display_name": None},
+                        "body": "good",
+                        "score": 5,
+                    },
+                    {
+                        "id": 2,
+                        "author": {"id": 3, "username": "carol", "display_name": None},
+                        "body": "oops",
+                        "score": "not_an_int",  # error
+                    },
+                ],
+                "stats": {"views": 100},
+            },
+        ]
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(list[PostTypedDict], data)
+        assert exc_info.value.path == "[0].comments[1].score"
+
+    def test_dataclass_with_nested_namedtuples_success(self) -> None:
+        """Dataclass containing a list of NamedTuples validates correctly."""
+        result = validator.validate(
+            RegionDataclass,
+            {
+                "name": "Pacific Northwest",
+                "center": {"lat": 47.6, "lng": -122.3},
+                "tags": [
+                    {"id": 1, "name": "mountains", "slug": "mountains"},
+                    {"id": 2, "name": "forests", "slug": "forests"},
+                    {"id": 3, "name": "coast", "slug": "coast"},
+                ],
+            },
+        )
+        assert isinstance(result, RegionDataclass)
+        assert isinstance(result.center, CoordinateDataclass)
+        assert result.center.lat == 47.6
+        assert result.center.lng == -122.3
+        assert len(result.tags) == 3
+        assert all(isinstance(t, TagNamedTuple) for t in result.tags)
+        assert result.tags[0].name == "mountains"
+        assert result.tags[2].slug == "coast"
+
+    def test_dataclass_with_nested_namedtuple_error_path(self) -> None:
+        """Error in a NamedTuple nested inside a dataclass shows the full path."""
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(
+                RegionDataclass,
+                {
+                    "name": "Cascades",
+                    "center": {"lat": 47.6, "lng": -122.3},
+                    "tags": [
+                        {"id": 1, "name": "alpine", "slug": "alpine"},
+                        {"id": "not_an_int", "name": "lakes", "slug": "lakes"},  # error
+                    ],
+                },
+            )
+        assert exc_info.value.path == ".tags[1].id"
+
+    def test_dict_of_list_of_fixed_tuples_success(self) -> None:
+        """dict[str, list[tuple[int, str | None]]] validates correctly."""
+        result = validator.validate(
+            dict[str, list[tuple[int, str | None]]],  # type: ignore[arg-type]
+            {
+                "scores": [(1, "alpha"), (2, None), (3, "gamma")],
+                "counts": [(10, "x"), (20, "y")],
+                "empty": [],
+            },
+        )
+        assert result["scores"] == [(1, "alpha"), (2, None), (3, "gamma")]
+        assert result["counts"] == [(10, "x"), (20, "y")]
+        assert result["empty"] == []
+
+    def test_dict_of_list_of_fixed_tuples_error_path(self) -> None:
+        """Error in dict[str, list[tuple[int, str | None]]] reports correct path."""
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(
+                dict[str, list[tuple[int, str | None]]],  # type: ignore[arg-type]
+                {"scores": [(1, "ok"), (2, 3.14)]},  # 3.14 is not str | None
+            )
+        assert exc_info.value.path == ".scores[1][1]"
+
+    def test_large_collection_validates_all_items(self) -> None:
+        """All 100 items in a list must pass validation."""
+        data = [
+            {"id": i, "username": f"user{i}", "display_name": None} for i in range(100)
+        ]
+        result = validator.validate(list[AuthorTypedDict], data)
+        assert len(result) == 100
+        assert result[0]["id"] == 0
+        assert result[99]["username"] == "user99"
+
+    def test_large_collection_error_index(self) -> None:
+        """Error in item 50 of a 51-element list reports index [50]."""
+        data: list[dict[str, object]] = [
+            {"id": i, "username": f"user{i}", "display_name": None} for i in range(50)
+        ]
+        data.append({"id": "not_an_int", "username": "bad", "display_name": None})
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(list[AuthorTypedDict], data)
+        assert exc_info.value.path == "[50].id"
+
+    def test_int_to_float_coercion_in_nested_dataclass(self) -> None:
+        """Int-to-float coercion works through dict → dataclass nesting."""
+        result = validator.validate(
+            dict[str, CoordinateDataclass],
+            {
+                "a": {"lat": 1, "lng": 2},
+                "b": {"lat": 47, "lng": -122},
+            },
+        )
+        assert result["a"].lat == 1.0
+        assert result["a"].lng == 2.0
+        assert isinstance(result["a"].lat, float)
+        assert isinstance(result["b"].lng, float)
+
+    def test_optional_field_none_and_str_at_multiple_levels(self) -> None:
+        """display_name: str | None resolves correctly for both values in nested structs."""
+        data = [
+            {
+                "id": 1,
+                "title": "Post",
+                "author": {"id": 1, "username": "alice", "display_name": "Alice"},
+                "comments": [
+                    {
+                        "id": 1,
+                        "author": {"id": 2, "username": "bob", "display_name": None},
+                        "body": "hi",
+                        "score": 1,
+                    }
+                ],
+                "stats": {},
+            }
+        ]
+        result = validator.validate(list[PostTypedDict], data)
+        assert result[0]["author"]["display_name"] == "Alice"
+        assert result[0]["comments"][0]["author"]["display_name"] is None
+
+    def test_union_inside_dict_inside_list(self) -> None:
+        """list[dict[str, int | str]] validates mixed-value dicts correctly."""
+        result = validator.validate(
+            list[dict[str, int | str]],  # type: ignore[arg-type]
+            [
+                {"count": 5, "label": "foo"},
+                {"count": 10, "label": "bar"},
+            ],
+        )
+        assert result[0]["count"] == 5
+        assert result[0]["label"] == "foo"
+        assert result[1]["label"] == "bar"
