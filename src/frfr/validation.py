@@ -472,7 +472,7 @@ def parse_typed_dict[T](
     # Check for missing required keys
     missing = required_keys - data_keys
     if missing:
-        missing_key = next(iter(missing))
+        missing_key = min(missing)
         key_segment = _format_key_path_segment(missing_key)
         key_path = f"{path}{key_segment}" if path else key_segment
         raise ValidationError(
@@ -587,7 +587,7 @@ def parse_namedtuple[T](
 
         missing = required_keys - data_keys
         if missing:
-            missing_key = next(iter(missing))
+            missing_key = min(missing)
             field_path = f"{path}.{missing_key}" if path else f".{missing_key}"
             raise ValidationError(
                 target, mapping, path=field_path, message="missing required field"
@@ -596,7 +596,7 @@ def parse_namedtuple[T](
         extra = data_keys - all_keys
         if extra:
             extra_key = next(iter(extra))
-            field_path = f"{path}.{extra_key}" if path else f".{extra_key}"
+            field_path = f"{path}{_format_key_path_segment(extra_key)}" if path else _format_key_path_segment(extra_key)
             raise ValidationError(
                 target, mapping, path=field_path, message="unexpected field"
             )
@@ -660,7 +660,7 @@ def parse_dataclass[T](
     # Check for missing required fields
     missing = required_keys - data_keys
     if missing:
-        missing_key = next(iter(missing))
+        missing_key = min(missing)
         field_path = f"{path}.{missing_key}" if path else f".{missing_key}"
         raise ValidationError(
             target, mapping, path=field_path, message="missing required field"
@@ -670,7 +670,7 @@ def parse_dataclass[T](
     extra = data_keys - all_keys
     if extra:
         extra_key = next(iter(extra))
-        field_path = f"{path}.{extra_key}" if path else f".{extra_key}"
+        field_path = f"{path}{_format_key_path_segment(extra_key)}" if path else _format_key_path_segment(extra_key)
         raise ValidationError(
             target, mapping, path=field_path, message="unexpected field"
         )
