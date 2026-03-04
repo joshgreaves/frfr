@@ -175,9 +175,9 @@ src/frfr/
 - [ ] Edge cases and error message quality tests
 
 ### Error messages
-- [ ] Improve error messages with full paths (e.g., `data.users[0].age`)
-- [ ] Currently `ValidationError` has `path` param but handlers don't propagate it
-- [ ] Need to pass path context through recursive validation calls
+- [x] Improve error messages with full paths (e.g., `.users[0].age`)
+- [x] Handlers propagate path via `_validate_at()` method
+- [ ] Add more edge case path tests (sets don't have indices - handled gracefully)
 
 ### Type hints
 - [ ] `validate()` uses `type[T]` which pyright rejects for Union/Literal/Any type forms

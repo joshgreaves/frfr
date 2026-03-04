@@ -73,7 +73,7 @@ frfr.validate(UserDict, {"name": "bestie", "age": 25})  # returns typed dict
 when validation fails, you get clear errors that tell you exactly what's wrong:
 
 ```
-ValidationError: data.users[0].age - expected int, got str ("twenty five")
+ValidationError: .users[0].age - expected int, got str ('twenty five')
 ```
 
 no cryptic stack traces. no guessing. just facts.
@@ -109,17 +109,17 @@ class UserId:
         self.value = value
 
 def parse_user_id(
-    validator: frfr.Validator, target: type[UserId], data: object
+    validator: frfr.Validator, target: type[UserId], data: object, path: str
 ) -> UserId:
     if isinstance(data, int) and data > 0:
         return UserId(data)
-    raise frfr.ValidationError(target, data)
+    raise frfr.ValidationError(target, data, path=path)
 
 my_validator.register_type_handler(UserId, parse_user_id)
 my_validator.validate(UserId, 42)  # UserId(value=42)
 ```
 
-handlers receive the validator as the first arg - this enables recursive validation for nested types like `list[UserId]`.
+handlers receive the validator and path - use `validator._validate_at(type, data, path)` for recursive validation of nested types like `list[UserId]`.
 
 ### override built-in behavior
 
@@ -132,11 +132,11 @@ my_validator = frfr.Validator()
 
 # allow float -> int coercion (frfr is strict by default)
 def lenient_int(
-    validator: frfr.Validator, target: type[int], data: object
+    validator: frfr.Validator, target: type[int], data: object, path: str
 ) -> int:
     if isinstance(data, float) and data.is_integer():
         return int(data)
-    return frfr.validation.parse_int(validator, target, data)  # fall back to default
+    return frfr.validation.parse_int(validator, target, data, path)  # fall back to default
 
 my_validator.register_type_handler(int, lenient_int)
 my_validator.validate(int, 1.0)  # 1
