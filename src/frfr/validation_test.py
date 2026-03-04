@@ -1437,6 +1437,36 @@ class TestValidateDataclass:
         assert result.name == "bestie"
         assert result.age == 25
 
+    def test_dataclass_init_false_fields_are_ignored(self) -> None:
+        """Fields with init=False are excluded from validation and construction."""
+
+        @dataclasses.dataclass
+        class WithComputed:
+            value: int
+            doubled: int = dataclasses.field(init=False)
+
+            def __post_init__(self) -> None:
+                self.doubled = self.value * 2
+
+        result = validator.validate(WithComputed, {"value": 5})
+        assert result.value == 5
+        assert result.doubled == 10
+
+    def test_dataclass_init_false_field_in_input_is_rejected(self) -> None:
+        """Providing a value for an init=False field is treated as an unexpected field."""
+
+        @dataclasses.dataclass
+        class WithComputed:
+            value: int
+            doubled: int = dataclasses.field(init=False)
+
+            def __post_init__(self) -> None:
+                self.doubled = self.value * 2
+
+        with pytest.raises(validator.ValidationError) as exc_info:
+            validator.validate(WithComputed, {"value": 5, "doubled": 10})
+        assert "doubled" in str(exc_info.value)
+
     def test_namedtuple_instance_to_dataclass(self) -> None:
         user = UserNamedTuple(name="bestie", age=25)
         result = validator.validate(UserDataclass, user)

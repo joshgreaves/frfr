@@ -629,14 +629,16 @@ def compile_dataclass(
     """Compile a validator for dataclass types."""
     target_type = cast(type, target)
     hints = _get_type_hints(target_type)
-    dc_fields = {f.name: f for f in dataclasses.fields(target_type)}
+    dc_fields = {f.name: f for f in dataclasses.fields(target_type) if f.init}
     required_keys = frozenset(
         name
         for name, f in dc_fields.items()
         if f.default is dataclasses.MISSING and f.default_factory is dataclasses.MISSING
     )
     all_keys = frozenset(dc_fields.keys())
-    field_fns = {key: get_compiled(vtype) for key, vtype in hints.items()}
+    field_fns = {
+        key: get_compiled(vtype) for key, vtype in hints.items() if key in dc_fields
+    }
 
     def _dataclass(data: object, path: str) -> Any:
         if type(data) is dict:
