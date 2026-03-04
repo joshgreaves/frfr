@@ -3,6 +3,7 @@
 import collections.abc
 import dataclasses
 import functools
+import threading
 import types
 
 from typing import (
@@ -17,10 +18,6 @@ from typing import (
     get_type_hints,
     is_typeddict,
 )
-
-
-# Sentinel used by _get_compiled() to detect recursive types during compilation.
-_SENTINEL: object = object()
 
 
 @functools.cache
@@ -720,6 +717,10 @@ class Validator:
         # reusing their id() for a new type — which would cause _compiled to return
         # the wrong cached fn for the new type.
         self._compiled_refs: list[object] = []
+        # Lock for thread-safe access to _compiled and _compiling.
+        self._compiled_lock = threading.RLock()
+        # Set of type ids currently being compiled (for recursion detection).
+        self._compiling: set[int] = set()
         self._frozen = frozen
         self._register_builtins()
 
@@ -763,8 +764,10 @@ class Validator:
         # Compiled closures capture child validators at build time, so a new
         # handler for (e.g.) int would silently be ignored by any already-compiled
         # list[int] validator. Clearing the cache forces a full recompile on next use.
-        self._compiled.clear()
-        self._compiled_refs.clear()
+        with self._compiled_lock:
+            self._compiled.clear()
+            self._compiled_refs.clear()
+            self._compiling.clear()
 
     def register_predicate_handler[T](
         self,
@@ -792,8 +795,10 @@ class Validator:
         # Same reasoning as register_type_handler: compiled closures capture
         # child validators at build time, so a new predicate handler must
         # invalidate the cache to take effect on already-seen types.
-        self._compiled.clear()
-        self._compiled_refs.clear()
+        with self._compiled_lock:
+            self._compiled.clear()
+            self._compiled_refs.clear()
+            self._compiling.clear()
 
     def validate[T](self, target: type[T], data: object) -> T:
         """Validate and coerce data to the given type.
@@ -837,26 +842,42 @@ class Validator:
         Keyed by id(target) to distinguish e.g. int | float from float | int
         (Python treats these as equal but they have different arg orderings).
 
-        Recursive types are handled via _SENTINEL: if we're asked to compile
+        Recursive types are handled via _compiling set: if we're asked to compile
         a type that's already mid-compilation, we return a late-binding wrapper
         that defers the real lookup to call time (by which point compilation of
         the outer type will have finished and the real fn will be in the cache).
+
+        Thread-safe: uses _compiled_lock (RLock) to serialize access.
         """
-        tid = id(target)
-        fn = self._compiled.get(tid)
-        if fn is not None:
-            if fn is _SENTINEL:
+        with self._compiled_lock:
+            tid = id(target)
+            fn = self._compiled.get(tid)
+            if fn is not None:
+                return fn
+
+            if tid in self._compiling:
                 # Recursive type detected: return a wrapper that looks up the
                 # real compiled fn at call time. By then, the outer _get_compiled
                 # call will have stored the real fn under this id.
-                return lambda data, path: self._compiled[id(target)](data, path)
-            return fn
+                def _recursive_wrapper(data: object, path: str) -> Any:
+                    with self._compiled_lock:
+                        compiled_fn = self._compiled.get(tid)
+                    if compiled_fn is None:
+                        raise RuntimeError(
+                            f"Compilation failed for recursive type {target!r}"
+                        )
+                    return compiled_fn(data, path)
 
-        self._compiled[tid] = _SENTINEL  # type: ignore
-        fn = self._build_compiled(target)
-        self._compiled[tid] = fn
-        self._compiled_refs.append(target)  # keep type alive; see __init__ comment
-        return fn
+                return _recursive_wrapper
+
+            self._compiling.add(tid)
+            try:
+                fn = self._build_compiled(target)
+                self._compiled[tid] = fn
+                self._compiled_refs.append(target)  # keep type alive; see __init__
+                return fn
+            finally:
+                self._compiling.discard(tid)
 
     def _build_compiled(self, target: object) -> CompiledValidator[Any]:
         """Resolve the handler/compiler for target and build an optimized closure.
