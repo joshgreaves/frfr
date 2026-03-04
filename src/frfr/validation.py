@@ -473,7 +473,8 @@ def parse_typed_dict[T](
     missing = required_keys - data_keys
     if missing:
         missing_key = next(iter(missing))
-        key_path = f"{path}.{missing_key}" if path else f".{missing_key}"
+        key_segment = _format_key_path_segment(missing_key)
+        key_path = f"{path}{key_segment}" if path else key_segment
         raise ValidationError(
             target, mapping, path=key_path, message="missing required key"
         )
@@ -482,14 +483,16 @@ def parse_typed_dict[T](
     extra = data_keys - all_keys
     if extra:
         extra_key = next(iter(extra))
-        key_path = f"{path}.{extra_key}" if path else f".{extra_key}"
+        key_segment = _format_key_path_segment(extra_key)
+        key_path = f"{path}{key_segment}" if path else key_segment
         raise ValidationError(target, mapping, path=key_path, message="unexpected key")
 
     # Validate each value against its type hint
     result: dict[str, Any] = {}
     for key in data_keys:
         value_type = hints[key]
-        key_path = f"{path}.{key}" if path else f".{key}"
+        key_segment = _format_key_path_segment(key)
+        key_path = f"{path}{key_segment}" if path else key_segment
         result[key] = validator._validate_at(value_type, mapping[key], key_path)
 
     return cast(T, result)
