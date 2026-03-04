@@ -88,6 +88,14 @@ class Validator:
     All validators start with built-in handlers for standard types.
     Use `frozen=True` to prevent further registration (used internally
     for the default validator).
+
+    Memory note: the first time a structural type (dataclass, TypedDict,
+    NamedTuple) is validated, its handler is cached in _handlers so future
+    calls skip the predicate scan. This cache is unbounded — it grows by one
+    entry per distinct type seen. In practice this is fine since the number
+    of types in an application is small and fixed. If you need to bound
+    memory (e.g., validating many dynamically-generated types), create a new
+    Validator() instance to get a fresh cache.
     """
 
     def __init__(self, *, frozen: bool = False) -> None:
@@ -198,8 +206,11 @@ class Validator:
             return cast(T, handler(self, target, data, path))
 
         # 2. Predicate handlers (TypedDict, NamedTuple, dataclass, user-defined)
+        # Cache the match in _handlers so subsequent calls skip this scan entirely —
+        # lazy compilation: first call pays the predicate cost, all future calls are O(1).
         for predicate, pred_handler in self._predicate_handlers:
             if predicate(target):
+                self._handlers[target] = pred_handler
                 return cast(T, pred_handler(self, target, data, path))
 
         # 3. Origin-based match (list[int] -> list, Union[int, str] -> Union, ...)
