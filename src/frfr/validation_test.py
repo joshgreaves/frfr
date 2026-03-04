@@ -1802,7 +1802,12 @@ class TestCustomValidator:
     """Tests for custom Validator instances: registration, overrides, composition."""
 
     def test_default_validator_is_frozen(self) -> None:
-        """The module-level validate() uses a frozen validator that rejects registration."""
+        """The module-level default validator rejects registration."""
+        with pytest.raises(RuntimeError, match="frozen"):
+            validator._DEFAULT_VALIDATOR.register_type_handler(int, validator.parse_int)
+
+    def test_explicit_frozen_validator_rejects_registration(self) -> None:
+        """An explicitly frozen Validator instance rejects registration."""
         v = validator.Validator(frozen=True)
         with pytest.raises(RuntimeError, match="frozen"):
             v.register_type_handler(int, validator.parse_int)
