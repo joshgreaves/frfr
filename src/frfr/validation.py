@@ -505,6 +505,8 @@ def compile_typed_dict(
     )
     all_keys = required_keys | optional_keys
     field_fns = {key: get_compiled(vtype) for key, vtype in hints.items()}
+    # Precompute path segments for known keys (avoids isinstance+isidentifier per key)
+    key_segments = {key: _format_key_path_segment(key) for key in all_keys}
 
     def _typed_dict(data: object, path: str) -> Any:
         if type(data) is dict:
@@ -522,7 +524,7 @@ def compile_typed_dict(
         missing = required_keys - data_keys
         if missing:
             missing_key = min(missing)
-            key_segment = _format_key_path_segment(missing_key)
+            key_segment = key_segments[missing_key]
             key_path = f"{path}{key_segment}" if path else key_segment
             raise ValidationError(
                 target_type, mapping, path=key_path, message="missing required key"
@@ -531,6 +533,7 @@ def compile_typed_dict(
         extra = data_keys - all_keys
         if extra:
             extra_key = next(iter(extra))
+            # Extra keys aren't precomputed, format on demand (error path only)
             key_segment = _format_key_path_segment(extra_key)
             key_path = f"{path}{key_segment}" if path else key_segment
             raise ValidationError(
@@ -539,7 +542,7 @@ def compile_typed_dict(
 
         result: dict[str, Any] = {}
         for key in data_keys:
-            key_segment = _format_key_path_segment(key)
+            key_segment = key_segments[key]
             key_path = f"{path}{key_segment}" if path else key_segment
             result[key] = field_fns[key](mapping[key], key_path)
         return result
@@ -559,6 +562,8 @@ def compile_namedtuple(
     all_keys = frozenset(fields)
     required_keys = frozenset(f for f in fields if f not in defaults)
     field_fns = {field: get_compiled(hints[field]) for field in fields}
+    # Precompute path segments for known fields (always valid identifiers)
+    field_segments = {field: f".{field}" for field in fields}
 
     def _namedtuple(data: object, path: str) -> Any:
         if type(data) is dict:
@@ -574,7 +579,8 @@ def compile_namedtuple(
             missing = required_keys - data_keys
             if missing:
                 missing_key = min(missing)
-                field_path = f"{path}.{missing_key}" if path else f".{missing_key}"
+                seg = field_segments[missing_key]
+                field_path = f"{path}{seg}" if path else seg
                 raise ValidationError(
                     target_type,
                     mapping,
@@ -585,11 +591,9 @@ def compile_namedtuple(
             extra = data_keys - all_keys
             if extra:
                 extra_key = next(iter(extra))
-                field_path = (
-                    f"{path}{_format_key_path_segment(extra_key)}"
-                    if path
-                    else _format_key_path_segment(extra_key)
-                )
+                # Extra keys aren't precomputed, format on demand (error path only)
+                seg = _format_key_path_segment(extra_key)
+                field_path = f"{path}{seg}" if path else seg
                 raise ValidationError(
                     target_type,
                     mapping,
@@ -600,7 +604,8 @@ def compile_namedtuple(
             validated: dict[str, Any] = {}
             for field in fields:
                 if field in data_keys:
-                    field_path = f"{path}.{field}" if path else f".{field}"
+                    seg = field_segments[field]
+                    field_path = f"{path}{seg}" if path else seg
                     validated[field] = field_fns[field](mapping[field], field_path)
             return target_type(**validated)
 
@@ -636,6 +641,8 @@ def compile_dataclass(
     field_fns = {
         key: get_compiled(vtype) for key, vtype in hints.items() if key in dc_fields
     }
+    # Precompute path segments for known fields (always valid identifiers)
+    field_segments = {key: f".{key}" for key in all_keys}
 
     def _dataclass(data: object, path: str) -> Any:
         if type(data) is dict:
@@ -651,7 +658,8 @@ def compile_dataclass(
         missing = required_keys - data_keys
         if missing:
             missing_key = min(missing)
-            field_path = f"{path}.{missing_key}" if path else f".{missing_key}"
+            seg = field_segments[missing_key]
+            field_path = f"{path}{seg}" if path else seg
             raise ValidationError(
                 target_type,
                 mapping,
@@ -662,18 +670,17 @@ def compile_dataclass(
         extra = data_keys - all_keys
         if extra:
             extra_key = next(iter(extra))
-            field_path = (
-                f"{path}{_format_key_path_segment(extra_key)}"
-                if path
-                else _format_key_path_segment(extra_key)
-            )
+            # Extra keys aren't precomputed, format on demand (error path only)
+            seg = _format_key_path_segment(extra_key)
+            field_path = f"{path}{seg}" if path else seg
             raise ValidationError(
                 target_type, mapping, path=field_path, message="unexpected field"
             )
 
         validated: dict[str, Any] = {}
         for key in data_keys:
-            key_path = f"{path}.{key}" if path else f".{key}"
+            seg = field_segments[key]
+            key_path = f"{path}{seg}" if path else seg
             validated[key] = field_fns[key](mapping[key], key_path)
         return target_type(**validated)
 
