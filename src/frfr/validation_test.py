@@ -1805,7 +1805,7 @@ class TestCustomValidator:
         """The module-level validate() uses a frozen validator that rejects registration."""
         v = validator.Validator(frozen=True)
         with pytest.raises(RuntimeError, match="frozen"):
-            v.register_type_handler(int, validator.parse_int)
+            v.register_type_handler(int, lambda _v, _t, data, _p: data)  # type: ignore[arg-type]
 
     def test_register_new_type(self) -> None:
         """A custom handler for an unknown type is called during validation."""
@@ -1883,7 +1883,9 @@ class TestCustomValidator:
             v: validator.ValidatorProtocol, target: type, data: object, path: str
         ) -> str:
             call_log.append(str(data))
-            return validator.parse_str(v, target, data, path)  # type: ignore[arg-type]
+            if type(data) is not str:
+                raise validator.ValidationError(target, data, path=path)  # type: ignore[arg-type]
+            return data  # type: ignore[return-value]
 
         v = validator.Validator()
         v.register_type_handler(str, tracking_str)
@@ -1920,7 +1922,7 @@ class TestCustomValidator:
             v: validator.ValidatorProtocol, target: type, data: object, path: str
         ) -> object:
             seen.append(target)
-            return validator.parse_dataclass(v, target, data, path)
+            return validator.compile_dataclass(target, v._get_compiled)(data, path)  # type: ignore[attr-defined]
 
         @dataclasses.dataclass
         class Point:
@@ -1942,6 +1944,41 @@ class TestCustomValidator:
         assert v.validate(UserDataclass, {"name": "alice", "age": 25}) == UserDataclass(
             "alice", 25
         )
+
+    def test_register_type_handler_after_cache_invalidates(self) -> None:
+        """Registering a new type handler invalidates compiled cache for that type."""
+        v = validator.Validator()
+        # Warm the cache for int
+        assert v.validate(int, 5) == 5
+        # Override int handler after the cache is warm
+        v.register_type_handler(int, lambda _v, _t, data, _p: 999)
+        # The new handler should be used, not the cached one
+        assert v.validate(int, 5) == 999
+
+    def test_register_type_handler_after_cache_invalidates_composite(self) -> None:
+        """Registering a new handler for a child type invalidates composite compiled cache."""
+        v = validator.Validator()
+        # Warm the cache for list[int]
+        assert v.validate(list[int], [1, 2]) == [1, 2]
+        # Override int handler after the cache is warm
+        v.register_type_handler(int, lambda _v, _t, data, _p: 0)
+        # The compiled list[int] must be rebuilt to pick up the new int handler
+        assert v.validate(list[int], [1, 2]) == [0, 0]
+
+    def test_register_predicate_handler_after_cache_invalidates(self) -> None:
+        """Registering a new predicate handler invalidates compiled cache."""
+
+        @dataclasses.dataclass
+        class Box:
+            value: int
+
+        v = validator.Validator()
+        # Warm the cache for Box
+        assert v.validate(Box, {"value": 1}) == Box(value=1)
+        # Register a predicate handler that intercepts all dataclasses
+        v.register_predicate_handler(dataclasses.is_dataclass, lambda _v, _t, _d, _p: "intercepted")
+        # The new predicate handler should take effect
+        assert v.validate(Box, {"value": 1}) == "intercepted"
 
 
 # ---------------------------------------------------------------------------
