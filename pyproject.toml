@@ -3,7 +3,10 @@ name = "frfr"
 version = "0.1.0"
 description = "No-cap runtime type validation for Python. For real."
 readme = "README.md"
-authors = [{ name = "Joshua Greaves", email = "joshua.greaves@gmail.com" }]
+authors = [
+    { name = "Joshua Greaves", email = "joshua.greaves@gmail.com" },
+    { name = "William Myers", email = "mwilliammyers@gmail.com" },
+]
 requires-python = ">=3.12"
 dependencies = []
 
