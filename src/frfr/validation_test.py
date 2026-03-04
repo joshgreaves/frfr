@@ -1676,6 +1676,39 @@ class TestValidateNamedTuple:
         assert exc_info.value.path == "[1][0]"
         assert "[1][0] - expected str" in str(exc_info.value)
 
+    # collections.namedtuple (untyped, no type hints)
+    def test_collections_namedtuple_from_dict(self) -> None:
+        """collections.namedtuple has no type hints, fields should be Any."""
+        Point = collections.namedtuple("Point", ["x", "y"])
+        result = validator.validate(Point, {"x": 1, "y": 2})
+        assert isinstance(result, Point)
+        assert result.x == 1
+        assert result.y == 2
+
+    def test_collections_namedtuple_from_tuple(self) -> None:
+        """collections.namedtuple from tuple input."""
+        Point = collections.namedtuple("Point", ["x", "y"])
+        result = validator.validate(Point, (3, 4))
+        assert isinstance(result, Point)
+        assert result.x == 3
+        assert result.y == 4
+
+    def test_collections_namedtuple_accepts_any_types(self) -> None:
+        """Untyped fields should accept any value (treated as Any)."""
+        Point = collections.namedtuple("Point", ["x", "y"])
+        result = validator.validate(Point, {"x": "hello", "y": [1, 2, 3]})
+        assert isinstance(result, Point)
+        assert result.x == "hello"
+        assert result.y == [1, 2, 3]
+
+    def test_collections_namedtuple_with_defaults(self) -> None:
+        """collections.namedtuple with defaults."""
+        Point = collections.namedtuple("Point", ["x", "y"], defaults=[0])
+        result = validator.validate(Point, {"x": 5})
+        assert isinstance(result, Point)
+        assert result.x == 5
+        assert result.y == 0
+
 
 class TestValidationError:
     """Tests for ValidationError formatting."""

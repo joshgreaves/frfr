@@ -561,7 +561,7 @@ def compile_namedtuple(
     defaults: dict[str, object] = getattr(target_type, "_field_defaults", {})
     all_keys = frozenset(fields)
     required_keys = frozenset(f for f in fields if f not in defaults)
-    field_fns = {field: get_compiled(hints[field]) for field in fields}
+    field_fns = {field: get_compiled(hints.get(field, Any)) for field in fields}
     # Precompute path segments for known fields (always valid identifiers)
     field_segments = {field: f".{field}" for field in fields}
 
