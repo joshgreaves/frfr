@@ -1076,7 +1076,7 @@ class TestValidateUnion:
         with pytest.raises(validator.ValidationError) as exc_info:
             validator.validate(
                 list[int | str],
-                [1, "two", ["not int or str"]],  # type: ignore[list-item]
+                [1, "two", ["not int or str"]],
             )
         assert exc_info.value.path == "[2]"
         assert "[2] - expected" in str(exc_info.value)
@@ -1847,7 +1847,7 @@ class TestCustomValidator:
     def test_override_does_not_affect_default_validator(self) -> None:
         """Overriding a handler on a custom instance leaves the default validator unchanged."""
         v = validator.Validator()
-        v.register_type_handler(int, lambda _v, _t, data, _p: 999)  # type: ignore[arg-type, return-value]
+        v.register_type_handler(int, lambda _v, _t, data, _p: 999)
         assert v.validate(int, 1) == 999
         assert validator.validate(int, 1) == 1
 
@@ -1909,8 +1909,8 @@ class TestCustomValidator:
 
         v = validator.Validator()
         v.register_predicate_handler(lambda t: isinstance(t, MyMeta), parse_mymeta)
-        assert isinstance(v.validate(MyA, {}), MyA)  # type: ignore[arg-type]
-        assert isinstance(v.validate(MyB, {}), MyB)  # type: ignore[arg-type]
+        assert isinstance(v.validate(MyA, {}), MyA)
+        assert isinstance(v.validate(MyB, {}), MyB)
 
     def test_predicate_handler_overrides_builtin(self) -> None:
         """A predicate handler registered last takes priority over built-in predicate handlers."""
@@ -1929,7 +1929,7 @@ class TestCustomValidator:
 
         v = validator.Validator()
         v.register_predicate_handler(dataclasses.is_dataclass, spy_dataclass)
-        result = v.validate(Point, {"x": 1, "y": 2})  # type: ignore[arg-type]
+        result = v.validate(Point, {"x": 1, "y": 2})
         assert seen == [Point]
         assert result == Point(x=1, y=2)
 
@@ -2068,7 +2068,7 @@ class TestLargeScaleIntegration:
     def test_dict_of_list_of_fixed_tuples_success(self) -> None:
         """dict[str, list[tuple[int, str | None]]] validates correctly."""
         result = validator.validate(
-            dict[str, list[tuple[int, str | None]]],  # type: ignore[arg-type]
+            dict[str, list[tuple[int, str | None]]],
             {
                 "scores": [(1, "alpha"), (2, None), (3, "gamma")],
                 "counts": [(10, "x"), (20, "y")],
@@ -2083,7 +2083,7 @@ class TestLargeScaleIntegration:
         """Error in dict[str, list[tuple[int, str | None]]] reports correct path."""
         with pytest.raises(validator.ValidationError) as exc_info:
             validator.validate(
-                dict[str, list[tuple[int, str | None]]],  # type: ignore[arg-type]
+                dict[str, list[tuple[int, str | None]]],
                 {"scores": [(1, "ok"), (2, 3.14)]},  # 3.14 is not str | None
             )
         assert exc_info.value.path == ".scores[1][1]"
@@ -2147,7 +2147,7 @@ class TestLargeScaleIntegration:
     def test_union_inside_dict_inside_list(self) -> None:
         """list[dict[str, int | str]] validates mixed-value dicts correctly."""
         result = validator.validate(
-            list[dict[str, int | str]],  # type: ignore[arg-type]
+            list[dict[str, int | str]],
             [
                 {"count": 5, "label": "foo"},
                 {"count": 10, "label": "bar"},
