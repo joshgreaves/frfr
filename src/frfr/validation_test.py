@@ -1803,16 +1803,26 @@ class TestCustomValidator:
 
     def test_default_validator_is_frozen(self) -> None:
         """The module-level default validator rejects registration."""
+
+        def noop_int(
+            _v: validator.ValidatorProtocol, _t: type, data: object, _p: str
+        ) -> int:
+            return int(data)  # type: ignore[arg-type]
+
         with pytest.raises(RuntimeError, match="frozen"):
-            validator._DEFAULT_VALIDATOR.register_type_handler(
-                int, lambda _v, _t, data, _p: data
-            )
+            validator._DEFAULT_VALIDATOR.register_type_handler(int, noop_int)
 
     def test_explicit_frozen_validator_rejects_registration(self) -> None:
         """An explicitly frozen Validator instance rejects registration."""
+
+        def noop_int(
+            _v: validator.ValidatorProtocol, _t: type, data: object, _p: str
+        ) -> int:
+            return int(data)  # type: ignore[arg-type]
+
         v = validator.Validator(frozen=True)
         with pytest.raises(RuntimeError, match="frozen"):
-            v.register_type_handler(int, lambda _v, _t, data, _p: data)
+            v.register_type_handler(int, noop_int)
 
     def test_register_new_type(self) -> None:
         """A custom handler for an unknown type is called during validation."""

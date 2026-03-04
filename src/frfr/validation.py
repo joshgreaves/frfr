@@ -168,7 +168,7 @@ def _coerce_to_str_mapping(
     any key is not a str (signals the caller to raise ValidationError).
     """
     if type(data) is dict:
-        return data if all(isinstance(k, str) for k in data) else None
+        return cast(collections.abc.Mapping[str, object], data) if all(isinstance(k, str) for k in data) else None
     mapping = _coerce_to_mapping(data)
     if mapping is None:
         return None
@@ -507,7 +507,7 @@ def compile_typed_dict(
 
     def _typed_dict(data: object, path: str) -> Any:
         if type(data) is dict:
-            mapping: collections.abc.Mapping[str, object] = data
+            mapping: collections.abc.Mapping[str, object] = cast(collections.abc.Mapping[str, object], data)
         else:
             _mapping = _coerce_to_str_mapping(data)
             if _mapping is None:
@@ -559,7 +559,7 @@ def compile_namedtuple(
 
     def _namedtuple(data: object, path: str) -> Any:
         if type(data) is dict:
-            mapping: collections.abc.Mapping[str, object] | None = data
+            mapping: collections.abc.Mapping[str, object] | None = cast(collections.abc.Mapping[str, object], data)
         else:
             mapping = _coerce_to_str_mapping(data)
 
@@ -625,8 +625,7 @@ def compile_dataclass(
     required_keys = frozenset(
         name
         for name, f in dc_fields.items()
-        if f.default is dataclasses.MISSING
-        and f.default_factory is dataclasses.MISSING  # type: ignore[misc]
+        if f.default is dataclasses.MISSING and f.default_factory is dataclasses.MISSING
     )
     all_keys = frozenset(dc_fields.keys())
     field_fns = {key: get_compiled(vtype) for key, vtype in hints.items()}
