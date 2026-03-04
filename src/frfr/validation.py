@@ -532,7 +532,7 @@ def compile_typed_dict(
 
         extra = data_keys - all_keys
         if extra:
-            extra_key = next(iter(extra))
+            extra_key = min(extra)
             # Extra keys aren't precomputed, format on demand (error path only)
             key_segment = _format_key_path_segment(extra_key)
             key_path = f"{path}{key_segment}" if path else key_segment
@@ -590,7 +590,7 @@ def compile_namedtuple(
 
             extra = data_keys - all_keys
             if extra:
-                extra_key = next(iter(extra))
+                extra_key = min(extra)
                 # Extra keys aren't precomputed, format on demand (error path only)
                 seg = _format_key_path_segment(extra_key)
                 field_path = f"{path}{seg}" if path else seg
@@ -669,7 +669,7 @@ def compile_dataclass(
 
         extra = data_keys - all_keys
         if extra:
-            extra_key = next(iter(extra))
+            extra_key = min(extra)
             # Extra keys aren't precomputed, format on demand (error path only)
             seg = _format_key_path_segment(extra_key)
             field_path = f"{path}{seg}" if path else seg
