@@ -596,7 +596,11 @@ def parse_namedtuple[T](
         extra = data_keys - all_keys
         if extra:
             extra_key = next(iter(extra))
-            field_path = f"{path}{_format_key_path_segment(extra_key)}" if path else _format_key_path_segment(extra_key)
+            field_path = (
+                f"{path}{_format_key_path_segment(extra_key)}"
+                if path
+                else _format_key_path_segment(extra_key)
+            )
             raise ValidationError(
                 target, mapping, path=field_path, message="unexpected field"
             )
@@ -670,7 +674,11 @@ def parse_dataclass[T](
     extra = data_keys - all_keys
     if extra:
         extra_key = next(iter(extra))
-        field_path = f"{path}{_format_key_path_segment(extra_key)}" if path else _format_key_path_segment(extra_key)
+        field_path = (
+            f"{path}{_format_key_path_segment(extra_key)}"
+            if path
+            else _format_key_path_segment(extra_key)
+        )
         raise ValidationError(
             target, mapping, path=field_path, message="unexpected field"
         )
