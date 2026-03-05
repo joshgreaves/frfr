@@ -30,14 +30,15 @@ we follow the [Google Python Style Guide](https://google.github.io/styleguide/py
 ```python
 # good
 import os
-import typing
+import collections
+from typing import Any, Union, Optional
 
 # avoid
 from os import path
-from typing import Optional, Union
+from collections import OrderedDict
 ```
 
-import modules, not their contents. keeps things explicit and avoids namespace drama.
+import modules, not their contents — except for `typing`, where `from typing import ...` is preferred. keeps things explicit and avoids namespace drama.
 
 ### Type checking is non-negotiable
 
@@ -59,7 +60,7 @@ uv run ruff check --fix .
 
 ### Tests
 
-tests live next to the code they test. prefer helper functions over fixtures so setup stays explicit.
+tests live next to the code they test. NO fixtures — use explicit helper functions for setup.
 
 ```
 src/frfr/validation.py
@@ -92,9 +93,16 @@ when adding support for a new type, follow this order:
 
 ### Coercion rules
 
-- lossless widening is valid (`int` → `float`)
-- container types can coerce to equivalent types (`list` → `tuple[T, ...]`)
-- everything else is rejected
+coercion changes the container, not the meaning. we accept:
+
+- lossless widening (`int` → `float`)
+- structurally equivalent containers (`list` ↔ `tuple` — same elements, different wrapper)
+- mapping types → `dict` (`OrderedDict`, `MappingProxyType`, etc.)
+
+we reject:
+
+- parsing operations (`"1"` → `int` — that's your deserializer's job)
+- lossy conversions (`list` → `set` — duplicates would disappear silently)
 
 ### Errors should be clear
 
