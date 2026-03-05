@@ -50,7 +50,7 @@ def compile_typed_dict(
 
         extra = data_keys - all_keys
         if extra:
-            extra_key = min(extra)
+            extra_key = min(extra, key=repr)
             key_segment = frfr.utils.format_key_path_segment(extra_key)
             key_path = f"{path}{key_segment}" if path else key_segment
             raise frfr.types.ValidationError(
@@ -107,7 +107,7 @@ def compile_namedtuple(
 
             extra = data_keys - all_keys
             if extra:
-                extra_key = min(extra)
+                extra_key = min(extra, key=repr)
                 seg = frfr.utils.format_key_path_segment(extra_key)
                 field_path = f"{path}{seg}" if path else seg
                 raise frfr.types.ValidationError(
@@ -185,7 +185,7 @@ def compile_dataclass(
 
         extra = data_keys - all_keys
         if extra:
-            extra_key = min(extra)
+            extra_key = min(extra, key=repr)
             seg = frfr.utils.format_key_path_segment(extra_key)
             field_path = f"{path}{seg}" if path else seg
             raise frfr.types.ValidationError(

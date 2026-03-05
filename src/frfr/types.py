@@ -79,7 +79,7 @@ class Handler[T](Protocol):
     """A module-level handler function that performs validation directly.
 
     Handlers receive a ValidatorProtocol to enable recursive validation.
-    The path parameter tracks location in ntested structures for error messages.
+    The path parameter tracks location in nested structures for error messages.
     """
 
     def __call__(
