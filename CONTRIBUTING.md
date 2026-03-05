@@ -62,7 +62,7 @@ uv run ruff check --fix .
 
 tests live next to the code they test. NO fixtures — use explicit helper functions for setup.
 
-```
+```text
 src/frfr/validation.py
 src/frfr/validation_test.py   # alongside source
 ```
