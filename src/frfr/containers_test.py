@@ -950,17 +950,17 @@ class TestValidateMapping:
 
 class TestValidateFinal:
     def test_final_int(self) -> None:
-        result = frfr.validate(Final[int], 42)  # type: ignore[arg-type]
+        result = frfr.validate(Final[int], 42)  # pyright: ignore[reportArgumentType]
         assert result == 42
         assert type(result) is int
 
     def test_final_str(self) -> None:
-        result = frfr.validate(Final[str], "hello")  # type: ignore[arg-type]
+        result = frfr.validate(Final[str], "hello")  # pyright: ignore[reportArgumentType]
         assert result == "hello"
 
     def test_final_rejects_wrong_type(self) -> None:
         with pytest.raises(frfr.ValidationError):
-            frfr.validate(Final[int], "not-an-int")  # type: ignore[arg-type]
+            frfr.validate(Final[int], "not-an-int")  # pyright: ignore[reportArgumentType]
 
     def test_final_in_dataclass(self) -> None:
         @dataclasses.dataclass
@@ -980,12 +980,12 @@ class TestNewType:
     """Tests for NewType validation — should unwrap and validate as the base type."""
 
     def test_newtype_int_valid(self) -> None:
-        result = frfr.validate(UserId, 42)  # ty: ignore[invalid-argument-type]
+        result = frfr.validate(UserId, 42)  # type: ignore[arg-type]
         assert result == 42
         assert type(result) is int
 
     def test_newtype_str_valid(self) -> None:
-        result = frfr.validate(Username, "alice")  # ty: ignore[invalid-argument-type]
+        result = frfr.validate(Username, "alice")  # type: ignore[arg-type]
         assert result == "alice"
         assert type(result) is str
 
@@ -1004,7 +1004,7 @@ class TestNewType:
 
     def test_newtype_of_newtype(self) -> None:
         # SpecialUserId -> UserId -> int; should validate as int
-        result = frfr.validate(SpecialUserId, 99)  # ty: ignore[invalid-argument-type]
+        result = frfr.validate(SpecialUserId, 99)  # type: ignore[arg-type]
         assert result == 99
         assert type(result) is int
 
