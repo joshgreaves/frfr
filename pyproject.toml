@@ -27,6 +27,7 @@ classifiers = [
 Homepage = "https://github.com/joshgreaves/frfr"
 Repository = "https://github.com/joshgreaves/frfr"
 Documentation = "https://github.com/joshgreaves/frfr#readme"
+Changelog = "https://github.com/joshgreaves/frfr/blob/main/CHANGELOG.md"
 Issues = "https://github.com/joshgreaves/frfr/issues"
 
 [build-system]
