@@ -2,17 +2,24 @@
 
 [![CI](https://github.com/joshgreaves/frfr/actions/workflows/ci.yml/badge.svg)](https://github.com/joshgreaves/frfr/actions/workflows/ci.yml)
 
-runtime type validation that's actually valid. no cap.
+lightweight runtime validation. actually valid. for real.
 
 ## what is this
 
 frfr (for real for real) validates your data at runtime against Python types. you pass a type and some data, and it either gives you back a properly typed instance or tells you exactly why your data is cap.
 
 ```python
+import dataclasses
+
 import frfr
 
-data = {"name": "bestie", "age": 25}
-user = frfr.validate(User, data)  # returns a User instance or throws
+@dataclasses.dataclass
+class User:
+    name: str
+    age: int
+
+data = {"name": "bestie", "age": 27}
+user: User = frfr.validate(User, data)  # User instance or ValidationError
 ```
 
 that's it. that's the whole api.
@@ -20,12 +27,48 @@ that's it. that's the whole api.
 ## install
 
 ```bash
-pip install frfr
-# or
 uv add frfr
+# or
+pip install frfr
 ```
 
-requires python 3.12+
+**requires python 3.12+** — frfr uses modern typing features (PEP 695 type parameter syntax, `type` statement) that aren't available in earlier versions.
+
+## quickstart
+
+frfr handles the nested, optional, union-y stuff you actually deal with:
+
+```python
+import dataclasses
+from typing import Literal
+
+import frfr
+
+@dataclasses.dataclass
+class Address:
+    street: str
+    city: str
+    country: str = "US"
+
+@dataclasses.dataclass
+class Person:
+    name: str
+    address: Address | None
+    role: Literal["admin", "user", "guest"]
+    tags: list[str]
+
+data = {
+    "name": "bestie",
+    "address": {"street": "123 Main St", "city": "Springfield"},
+    "role": "admin",
+    "tags": ["verified", "early-adopter"],
+}
+
+person: Person = frfr.validate(Person, data)
+# Person(name='bestie', address=Address(street='123 Main St', city='Springfield', country='US'), role='admin', tags=['verified', 'early-adopter'])
+```
+
+nested dataclasses, optional fields, union types, literals, defaults — all validated recursively with clear error paths.
 
 ## why frfr?
 
@@ -44,17 +87,17 @@ if you want string-to-int coercion, let your json parser handle it. frfr validat
 ### it coerces when it makes sense
 
 ```python
-frfr.validate(float, 1)              # 1.0 - int to float is lossless, we're chill
-frfr.validate(tuple[str, ...], ["a", "b"])  # ("a", "b") - list to tuple, same energy
+frfr.validate(float, 7)              # 7.0 - int to float is lossless
+frfr.validate(tuple[str, ...], ["a", "b"])  # ("a", "b") - list to tuple
 ```
 
 ### it handles the hard stuff
 
 ```python
-from dataclasses import dataclass
+import dataclasses
 from typing import TypedDict
 
-@dataclass
+@dataclasses.dataclass
 class User:
     name: str
     age: int
@@ -64,11 +107,11 @@ class UserDict(TypedDict):
     age: int
 
 # both work
-frfr.validate(User, {"name": "bestie", "age": 25})      # returns User instance
-frfr.validate(UserDict, {"name": "bestie", "age": 25})  # returns typed dict
+frfr.validate(User, {"name": "bestie", "age": 27})      # returns User instance
+frfr.validate(UserDict, {"name": "bestie", "age": 27})  # returns typed dict
 ```
 
-### errors hit different
+### clear errors
 
 when validation fails, you get clear errors that tell you exactly what's wrong:
 
@@ -80,18 +123,26 @@ no cryptic stack traces. no guessing. just facts.
 
 ## supported types
 
-- **primitives**: `str`, `int`, `float`, `bool`, `None`
-- **containers**: `list[T]`, `dict[K, V]`, `tuple[T, ...]`, `set[T]`
-- **typing**: `Optional[T]`, `Union[T1, T2]`, `Literal["a", "b"]`
-- **structured**: `TypedDict`, `@dataclass`, `NamedTuple`
-- **generics**: nested types like `list[dict[str, User]]`
+- **scalars**: `Any`, `str`, `int`, `float`, `bool`, `None`, `bytes`
+- **stdlib value types**: `decimal.Decimal`, `datetime.datetime`, `datetime.date`, `datetime.time`, `datetime.timedelta`, `uuid.UUID`, `pathlib.Path`
+- **containers**: `list[T]`, `dict[K, V]`, `tuple[T, ...]`, `tuple[T1, T2, ...]`, `set[T]`, `frozenset[T]`
+- **abstract collections**: `collections.abc.Sequence[T]`, `collections.abc.Mapping[K, V]`
+- **typing constructs**: `Optional[T]`, `Union[T1, T2]` / `T1 | T2`, `Literal[...]`, `Annotated[T, ...]` (transparent), `NewType(...)`, `Final[T]`
+- **structured types**: `TypedDict`, `@dataclass`, `NamedTuple`
+- **nested generics**: compositions like `dict[str, list[tuple[int, str | None]]]`
+
+frfr enforces strict structure by default:
+- extra keys in `TypedDict`, `dataclass`, and `NamedTuple` inputs are rejected
+- required keys/fields must be present
+- mutable containers return new objects (so validated output can't mutate original input by accident)
 
 ## philosophy
 
 1. **types mean what they say** - no sneaky coercion
 2. **fail fast, fail clear** - know exactly what's wrong
-3. **one function** - `validate()` does everything
-4. **no magic** - explicit is better than implicit
+3. **zero dependencies** - stdlib-only runtime dependency footprint
+4. **your types, not ours** - validate into existing dataclasses, TypedDicts, NamedTuples, and stdlib types
+5. **one primary entry point** - `validate()` for most usage, `Validator` when you need customization
 
 ## extending frfr
 
@@ -119,11 +170,20 @@ my_validator.register_type_handler(UserId, parse_user_id)
 my_validator.validate(UserId, 42)  # UserId(value=42)
 ```
 
-handlers receive the validator and path - use `validator._validate_at(type, data, path)` for recursive validation of nested types like `list[UserId]`.
+### advanced handler api: `_validate_at`
+
+for custom handlers that validate nested structures, use `validator._validate_at(...)` so nested errors keep correct paths.
+
+```python
+# inside a custom handler:
+validated_item = validator._validate_at(UserId, data["user_id"], f"{path}.user_id")
+```
+
+`_validate_at` has a leading underscore, but in custom handler composition it's the intended path-aware tool.
 
 ### override built-in behavior
 
-want different coercion rules? compose with the exposed handlers.
+want different coercion rules? register your own handler for that exact type.
 
 ```python
 import frfr
@@ -136,13 +196,155 @@ def lenient_int(
 ) -> int:
     if isinstance(data, float) and data.is_integer():
         return int(data)
-    return frfr.validation.parse_int(validator, target, data, path)  # fall back to default
+    if type(data) is int:
+        return data
+    raise frfr.ValidationError(target, data, path=path)
 
 my_validator.register_type_handler(int, lenient_int)
 my_validator.validate(int, 1.0)  # 1
 ```
 
 the default `frfr.validate()` stays untouched - your custom validator is isolated.
+
+## common patterns
+
+### validating API responses
+
+```python
+import frfr
+from typing import TypedDict
+
+class ApiResponse(TypedDict):
+    id: int
+    status: str
+    data: dict[str, str]
+
+response = requests.get("https://api.example.com/resource")
+validated = frfr.validate(ApiResponse, response.json())
+```
+
+### config file parsing
+
+```python
+import frfr
+import tomllib
+from typing import TypedDict
+
+class DatabaseConfig(TypedDict):
+    host: str
+    port: int
+    name: str
+
+class Config(TypedDict):
+    database: DatabaseConfig
+    debug: bool
+
+with open("config.toml", "rb") as f:
+    raw = tomllib.load(f)
+
+config = frfr.validate(Config, raw)
+```
+
+### request body validation (flask example)
+
+```python
+import dataclasses
+import frfr
+from flask import Flask, request, jsonify
+
+@dataclasses.dataclass
+class CreateUserRequest:
+    email: str
+    name: str
+    age: int | None = None
+
+app = Flask(__name__)
+
+@app.post("/users")
+def create_user():
+    try:
+        body = frfr.validate(CreateUserRequest, request.json)
+    except frfr.ValidationError as e:
+        return jsonify({"error": str(e)}), 400
+    # body is now a CreateUserRequest instance
+    return jsonify({"created": body.email})
+```
+
+## current scope
+
+frfr is focused on strict structural validation and clear errors. it does **not** currently do:
+- collect-all-errors mode (it fails fast on first validation error)
+- field aliasing / key renaming
+- field-level constraints like min/max/pattern
+
+## frfr vs pydantic
+
+use **frfr** when:
+- you want zero runtime dependencies
+- you need strict, predictable type semantics (minimal coercion)
+- you're validating into existing stdlib/python typing shapes (`dataclass`, `TypedDict`, `NamedTuple`, enums, stdlib value types)
+- you care about a small, auditable codebase and simple mental model
+
+use **pydantic** when:
+- you need rich field constraints and validators
+- you need collect-all-errors behavior for user-facing forms/config APIs
+- you need aliasing/model config and broader framework ecosystem integration (for example FastAPI/OpenAPI-heavy flows)
+- you want built-in higher-level model features beyond structural validation
+
+### measured comparison (this repo, this machine)
+
+numbers below come from local measurements on Python 3.12.
+they are directional, not universal; rerun on your workload before deciding.
+
+**1) existing suite benchmark means** (`benchmarks/test_benchmarks.py`, lower is better)
+
+| case | frfr (μs) | pydantic (μs) | ratio |
+|---|---:|---:|---:|
+| simple | 2.301 | 1.982 | 1.16x |
+| nested | 7.861 | 4.310 | 1.82x |
+| complex | 21.219 | 4.010 | 5.29x |
+| list of models | 24.676 | 13.716 | 1.80x |
+
+frfr is near pydantic on the simple case, slower on more complex shapes. that's expected: pydantic uses highly optimized internals (including Rust).
+
+**2) cold import time** (clean venv with both installed; new process per import)
+
+| library | mean (ms) | median (ms) |
+|---|---:|---:|
+| frfr | 74.705 | 72.517 |
+| pydantic | 147.807 | 134.205 |
+
+**3) package footprint**
+
+| metric | frfr | pydantic |
+|---|---:|---:|
+| project wheel size | 15,505 bytes | 463,580 bytes |
+| transitive wheel size (project + runtime deps) | 15,505 bytes | 2,643,746 bytes |
+| installed size (project only) | 57,277 bytes | 1,851,636 bytes |
+| installed size (project + runtime deps) | 57,277 bytes | 7,325,360 bytes |
+
+transitive pydantic deps measured: `annotated-types`, `pydantic`, `pydantic-core`, `typing-extensions`, `typing-inspection`. frfr is lowkey smol.
+
+**4) first-call vs steady-state** (`TypeAdapter` parity check, lower is better)
+
+| case | frfr first (μs) | frfr steady (μs) | pydantic `TypeAdapter` first (μs) | pydantic `TypeAdapter` steady (μs) |
+|---|---:|---:|---:|---:|
+| simple `TypedDict` | 134.553 | 1.795 | 2052.408 | 0.918 |
+| complex typed shape | 143.774 | 8.307 | 37.454 | 1.390 |
+
+this highlights a real tradeoff: frfr has fast first-call on simple shapes due to lightweight compile, but pydantic has faster steady-state throughput.
+
+**5) apples-to-apples typed-shape benchmark** (`pydantic.TypeAdapter`, lower is better)
+
+| case | frfr (μs) | pydantic `TypeAdapter` (μs) | ratio |
+|---|---:|---:|---:|
+| simple `TypedDict` | 2.027 | 1.001 | 2.02x |
+| nested typed shape | 8.787 | 2.481 | 3.54x |
+
+method note:
+- suite numbers come from `uv run pytest benchmarks/test_benchmarks.py --benchmark-only`
+- import/size numbers come from a clean temporary venv with both libs installed
+- wheel sizes use local frfr wheel and PyPI metadata for pinned pydantic runtime deps
 
 ## contributing
 

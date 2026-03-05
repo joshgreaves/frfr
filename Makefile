@@ -1,4 +1,12 @@
-.PHONY: format lint typecheck test ci bench bench-save bench-compare
+.PHONY: all clean format lint tycheck typecheck test ci bench bench-save bench-compare
+
+all: ci
+
+clean:
+	rm -rf build/ dist/ *.egg-info/
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name .ruff_cache -exec rm -rf {} + 2>/dev/null || true
 
 format:
 	uv run ruff format .
@@ -6,13 +14,16 @@ format:
 lint:
 	uv run ruff check --fix .
 
+tycheck:
+	uv run ty check
+
 typecheck:
 	uv run pyright
 
 test:
 	uv run pytest
 
-ci: format lint typecheck test
+ci: format lint tycheck typecheck test
 
 bench:
 	uv run pytest benchmarks/ --benchmark-only -v

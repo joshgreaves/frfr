@@ -7,189 +7,125 @@ Runtime type validation library for Python. validates your data fr fr (for real 
 ```python
 import frfr
 
-my_object = frfr.validate(MyType, data)
+value = frfr.validate(TargetType, data)
 ```
 
-That's it. Pass a type and some data, get back a validated and coerced instance of that type. If it's cap (invalid), it raises an exception.
+Pass a target type and data. You get back validated/coerced output or a `ValidationError`.
 
 ## Code style
 
 - Follow [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html)
-- Import modules, not classes or functions: `import os` not `from os import path`
-- Exception: `typing` imports can use `from typing import Any, Protocol, ...`
-- Use `ruff` for formatting
-- Use `ty` and `pyright` for type checking
-- Tests live alongside source: `src/frfr/mymodule.py` → `src/frfr/mymodule_test.py`
-- Use `pytest` but NO fixtures. Use helper functions for setup (more explicit)
+- Import modules, not classes/functions (except `typing` imports)
+- Use `ruff` for formatting and linting
+- Use both `ty` and `pyright` for type checking
+- Tests live alongside source: `src/frfr/module.py` -> `src/frfr/module_test.py`
+- Use `pytest` but NO fixtures; use explicit helper functions for setup
 
 ## Commands
 
 ```bash
-uv run ruff format .           # format code
-uv run ruff check --fix .      # lint and fix
-uv run pyright                  # type check
-uv run pytest                   # run tests
+uv run ruff format .      # format code
+uv run ruff check --fix . # lint and fix
+uv run ty check           # type check (ty)
+uv run pyright            # type check (pyright)
+uv run pytest             # run tests
+make ci                   # run full CI locally
 ```
 
 ## Architecture
 
-### Handler pattern
+### Compile-first validator design
 
-Each target type has a handler: `Callable[[ValidatorProtocol, type[T], object], T]`
+frfr compiles validation closures per target type and caches them. After first compile, repeated calls avoid per-call type introspection.
 
-```python
-def parse_int(
-    validator: ValidatorProtocol, target: type[int], data: object
-) -> int:
-    if type(data) is bool:
-        raise ValidationError(target, data)
-    if type(data) is int:
-        return data
-    raise ValidationError(target, data)
-```
+Core flow:
+1. `Validator.validate(target, data)` delegates to `_validate_at(target, data, path="")`
+2. `_get_compiled(target)` fetches or builds a compiled validator function
+3. Compiled function validates/coerces with path-aware errors
 
-Handlers receive:
-1. `validator` - enables recursive validation for nested types (e.g., `list[int]`)
-2. `target` - the full target type (important for generics like `list[str]`)
-3. `data` - the data to validate
+### Registration model
 
-### ValidatorProtocol
+`Validator` supports user extension with handler registration:
+- `register_type_handler(target, handler)` for exact-type overrides
+- `register_predicate_handler(predicate, handler)` for predicate-based overrides
 
-Protocol with just `validate()` method. Used in handler type signatures:
+Registering handlers clears compiled cache so new behavior applies to already-seen types.
 
-```python
-class ValidatorProtocol(Protocol):
-    def validate[T](self, target: type[T], data: object) -> T: ...
-```
+### Built-in compiler coverage
 
-### Validator class
+Built-ins include:
+- Scalars: `Any`, `bool`, `int`, `float`, `str`, `None`, `bytes`
+- Stdlib value types: `Decimal`, `datetime/date/time/timedelta`, `UUID`, `Path`
+- Containers: `list`, `tuple`, `dict`, `set`, `frozenset`
+- Abstract collections: `Sequence`, `Mapping`
+- Typing forms: `Annotated` (transparent), `Union` / `|`, `Literal`, `Final`
+- Predicate-based: `Enum` types, `NewType`, `TypedDict`, `NamedTuple`, dataclasses
 
-Concrete implementation with handler registration:
+### Public API
 
-```python
-class Validator:
-    def __init__(self, *, frozen: bool = False) -> None:
-        self._handlers: dict[type, Handler] = {}
-        self._frozen = frozen
-        self._register_builtins()  # all validators start with built-ins
-
-    def register(self, target: type[T], handler: Handler[T]) -> None:
-        if self._frozen:
-            raise RuntimeError("Cannot register on a frozen validator")
-        self._handlers[target] = handler
-
-    def validate(self, target: type[T], data: object) -> T:
-        handler = self._handlers.get(target)
-        if handler:
-            return handler(self, target, data)
-        raise ValidationError(target, data)
-```
-
-### Module API
-
-- `frfr.validate()` - uses a private frozen `Validator` instance
-- `frfr.Validator` - class for custom instances (comes with built-in handlers)
-- `frfr.ValidatorProtocol` - protocol for handler type signatures
-- `frfr.ValidationError` - exception raised on validation failure
-- `frfr.parse_int`, `frfr.parse_float`, etc. - exposed handlers for composition
-
-Users cannot register on the default validator (it's frozen). They create their own:
-
-```python
-my_validator = frfr.Validator()
-my_validator.register_type_handler(int, my_custom_int_handler)
-```
+`frfr` exports only:
+- `frfr.validate`
+- `frfr.Validator`
+- `frfr.ValidationError`
 
 ## Design decisions
 
-### Strict type validation
-- `"1"` does NOT coerce to `int` - let your serialization lib handle that
-- `1.0` does NOT coerce to `int` - int means int, no cap
-- `True`/`False` do NOT coerce to `int` - even though bool is technically int subclass
-- `1` DOES coerce to `float` - lossless widening is valid
+### Strict by default
+
+- No `"1"` -> `int`
+- No `1.0` -> `int`
+- No `True` -> `int`
+- Yes `1` -> `float` (lossless widening)
+
+### Structure enforcement
+
+- TypedDict/dataclass/NamedTuple reject unknown keys/fields
+- Required keys/fields must be present
+- Validation errors include full path context (e.g. `.users[0].age`)
 
 ### Type equivalences
+
 - `tuple[T, ...]` and `list[T]` are equivalent (both accept JSON arrays)
 - Coercion always produces the target type (list becomes tuple if that's what you asked for)
-
-### Union types - order matters
-- Union types are tried in declaration order; the first matching type wins
-- Coercion rules still apply within each type attempt
-- Example: `Union[float, int]` with `1` → `1.0` (int coerces to float, float wins)
-- Example: `Union[int, float]` with `1` → `1` (int matches first, no coercion needed)
-- Both `Union[A, B]` and `A | B` syntax are supported
-
-### Set types - no list/tuple coercion
-- `set` and `frozenset` only accept set/frozenset as input
-- No coercion from list/tuple - could silently lose data (duplicates)
-- Ordering doesn't transfer meaningfully between lists and sets
-- `set` ↔ `frozenset` coercion is allowed (lossless, both are set-like)
-
-### Always return new objects for mutable containers
-- Mutable containers (list, dict, set) always return a NEW object, never the original
-- This ensures safety: mutations to validated data don't affect the original input
-- Immutable types (int, float, str, bool, None, tuple) can return the original since they can't be mutated
-- Performance tradeoff is acceptable for typical JSON payloads; safety > speed
-
-### Supported types
-**Implemented:**
-- Primitives: `str`, `int`, `float`, `bool`, `None`, `Any`
-- Containers: `list[T]`, `dict[K, V]`, `tuple[T, ...]`, `tuple[T1, T2, ...]`, `set[T]`, `frozenset[T]`
-- Typing constructs: `Union[T1, T2]`, `T | None`, `TypedDict`, `Literal["a", "b"]`
-- Classes: `@dataclass` (construct from dict/Mapping; dataclass instances coerce to dict)
-- Generic types: `list[str]`, `dict[str, int]`, etc.
 - Mapping coercion: `OrderedDict`, `MappingProxyType`, etc. → `dict`
 
-**Planned:**
-- `NamedTuple`
+### Union types - order matters
+
+- Union types are tried in declaration order; the first matching type wins
+- Example: `Union[float, int]` with `1` → `1.0` (int coerces to float, float wins)
+- Example: `Union[int, float]` with `1` → `1` (int matches first, no coercion needed)
+
+### Container behavior
+
+- `list`/`tuple` inputs are accepted for sequence-like targets where appropriate
+- `set`/`frozenset` do not accept list/tuple input (avoid duplicate-loss surprises)
+- Mutable outputs (`list`, `dict`, `set`) are always NEW objects, never the original
+- This ensures safety: mutations to validated data don't affect the original input
+
+## Type-checker note
+
+`validate()` currently uses `type[T]` in signatures. Runtime behavior is correct, but static checkers still require suppressions for some type forms (`Union`, `Literal`, `Any`, `NewType`, `Final`, `Annotated` in some contexts).
+
+The right fix is `TypeForm[T]` from PEP 747 (`typing_extensions >= 4.15` has it), but pyright doesn't yet infer T correctly for `UnionType` through `TypeForm`. For now, call sites using these type forms use `# type: ignore[arg-type]`. Revisit when pyright adds full `TypeForm` support.
 
 ## Project structure
 
-```
+```text
 src/frfr/
-├── __init__.py        # public API exports
-├── validation.py      # Validator class, handlers, validate()
-├── validation_test.py # tests
-└── py.typed           # PEP 561 marker
+├── __init__.py
+├── validation.py
+├── types.py
+├── utils.py
+├── scalars.py
+├── containers.py
+├── structured.py
+├── *_test.py
+└── py.typed
 ```
 
-## Next steps
+## Near-term priorities
 
-### Types to implement
-- [x] `@dataclass` - major use case, construct from dict
-- [x] `NamedTuple` - similar to dataclass
-
-### API cleanup
-- [x] Simplify public API: only export `frfr.validate`, `frfr.ValidationError`, `frfr.Validator`
-- [x] Move parse functions to internal: `from frfr.validation import parse_int` (not `frfr.parse_int`)
-- [x] Rename `validator.py` → `validation.py`
-
-### Architecture fix
-- [x] Any, Union, TypedDict are hardcoded in `validate()` method - can't be overridden
-- [x] Should be registered handlers like everything else, not special-cased
-- [x] Users creating custom Validators should be able to customize these behaviors
-
-### Testing
-- [ ] Add large-scale integration tests with deeply nested types
-- [ ] Complex type combinations (e.g., `dict[str, list[tuple[int, Optional[str]]]]`)
-- [ ] Edge cases and error message quality tests
-
-### Error messages
-- [x] Improve error messages with full paths (e.g., `.users[0].age`)
-- [x] Handlers propagate path via `_validate_at()` method
-- [ ] Add more edge case path tests (sets don't have indices - handled gracefully)
-
-### Type hints
-- [ ] `validate()` uses `type[T]` which pyright rejects for Union/Literal/Any type forms
-- Validation works correctly at runtime — this is a type-hint-only limitation
-- The right fix is `TypeForm[T]` from PEP 747 (`typing_extensions >= 4.15` has it), but
-  pyright 1.1.x doesn't yet infer T correctly for `UnionType` through `TypeForm`
-- For now, call sites using Union/Literal/Any use `# type: ignore[arg-type]`
-- Revisit when pyright adds full `TypeForm` support
-
-### Documentation & release
-- [ ] Polish README with more examples
-- [ ] Add CHANGELOG.md
-- [ ] Set up branch protections on main
-- [ ] Configure PyPI publishing (GitHub Actions workflow)
-- [ ] First release to PyPI
+- Polish README examples and comparison guidance
+- Add `CHANGELOG.md`
+- Configure publish workflow to PyPI
+- Keep CI/tooling strict (`ruff`, `ty`, `pyright`, `pytest`)

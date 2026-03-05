@@ -1,18 +1,42 @@
 [project]
 name = "frfr"
 version = "0.1.0"
-description = "No-cap runtime type validation for Python. For real."
+description = "Lightweight runtime type validation for Python. For real."
 readme = "README.md"
+license = "MIT"
 authors = [
     { name = "Joshua Greaves", email = "joshua.greaves@gmail.com" },
     { name = "William Myers", email = "mwilliammyers@gmail.com" },
 ]
 requires-python = ">=3.12"
 dependencies = []
+keywords = ["validation", "runtime", "types", "dataclass", "typeddict"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/joshgreaves/frfr"
+Repository = "https://github.com/joshgreaves/frfr"
+Documentation = "https://github.com/joshgreaves/frfr#readme"
+Changelog = "https://github.com/joshgreaves/frfr/blob/main/CHANGELOG.md"
+Issues = "https://github.com/joshgreaves/frfr/issues"
 
 [build-system]
 requires = ["uv_build>=0.9.21,<0.10.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# Keep test modules out of wheels while leaving them available in source dists.
+wheel-exclude = ["*_test.py"]
 
 [dependency-groups]
 dev = [
