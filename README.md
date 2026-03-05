@@ -221,6 +221,61 @@ use **pydantic** when:
 - you need aliasing/model config and broader framework ecosystem integration (for example FastAPI/OpenAPI-heavy flows)
 - you want built-in higher-level model features beyond structural validation
 
+### measured comparison (this repo, this machine)
+
+numbers below come from local measurements on Python 3.12.
+they are directional, not universal; rerun on your workload before deciding.
+
+**1) existing suite benchmark means** (`benchmarks/test_benchmarks.py`, lower is better)
+
+| case | frfr (μs) | pydantic (μs) | ratio |
+|---|---:|---:|---:|
+| simple | 2.301 | 1.982 | 1.16x |
+| nested | 7.861 | 4.310 | 1.82x |
+| complex | 21.219 | 4.010 | 5.29x |
+| list of models | 24.676 | 13.716 | 1.80x |
+
+frfr is near pydantic on the simple case, slower on more complex shapes. that's expected: pydantic uses highly optimized internals (including Rust).
+
+**2) cold import time** (clean venv with both installed; new process per import)
+
+| library | mean (ms) | median (ms) |
+|---|---:|---:|
+| frfr | 74.705 | 72.517 |
+| pydantic | 147.807 | 134.205 |
+
+**3) package footprint**
+
+| metric | frfr | pydantic |
+|---|---:|---:|
+| project wheel size | 15,505 bytes | 463,580 bytes |
+| transitive wheel size (project + runtime deps) | 15,505 bytes | 2,643,746 bytes |
+| installed size (project only) | 57,277 bytes | 1,851,636 bytes |
+| installed size (project + runtime deps) | 57,277 bytes | 7,325,360 bytes |
+
+transitive pydantic deps measured: `annotated-types`, `pydantic`, `pydantic-core`, `typing-extensions`, `typing-inspection`.
+
+**4) first-call vs steady-state** (`TypeAdapter` parity check, lower is better)
+
+| case | frfr first (μs) | frfr steady (μs) | pydantic `TypeAdapter` first (μs) | pydantic `TypeAdapter` steady (μs) |
+|---|---:|---:|---:|---:|
+| simple `TypedDict` | 134.553 | 1.795 | 2052.408 | 0.918 |
+| complex typed shape | 143.774 | 8.307 | 37.454 | 1.390 |
+
+this highlights a real tradeoff: frfr has fast first-call on simple shapes due to lightweight compile, but pydantic has faster steady-state throughput.
+
+**5) apples-to-apples typed-shape benchmark** (`pydantic.TypeAdapter`, lower is better)
+
+| case | frfr (μs) | pydantic `TypeAdapter` (μs) | ratio |
+|---|---:|---:|---:|
+| simple `TypedDict` | 2.027 | 1.001 | 2.02x |
+| nested typed shape | 8.787 | 2.481 | 3.54x |
+
+method note:
+- suite numbers come from `uv run pytest benchmarks/test_benchmarks.py --benchmark-only`
+- import/size numbers come from a clean temporary venv with both libs installed
+- wheel sizes use local frfr wheel and PyPI metadata for pinned pydantic runtime deps
+
 ## contributing
 
 see [CONTRIBUTING.md](CONTRIBUTING.md). we'd love to have you.
