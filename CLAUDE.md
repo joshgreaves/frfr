@@ -19,7 +19,7 @@ Pass a target type and data. You get back validated/coerced output or a `Validat
 - Use `ruff` for formatting and linting
 - Use both `ty` and `pyright` for type checking
 - Tests live alongside source: `src/frfr/module.py` -> `src/frfr/module_test.py`
-- Use `pytest` and explicit helper functions; avoid fixtures unless clearly needed
+- Use `pytest` but NO fixtures; use explicit helper functions for setup
 
 ## Commands
 
@@ -83,15 +83,30 @@ Built-ins include:
 - Required keys/fields must be present
 - Validation errors include full path context (e.g. `.users[0].age`)
 
+### Type equivalences
+
+- `tuple[T, ...]` and `list[T]` are equivalent (both accept JSON arrays)
+- Coercion always produces the target type (list becomes tuple if that's what you asked for)
+- Mapping coercion: `OrderedDict`, `MappingProxyType`, etc. → `dict`
+
+### Union types - order matters
+
+- Union types are tried in declaration order; the first matching type wins
+- Example: `Union[float, int]` with `1` → `1.0` (int coerces to float, float wins)
+- Example: `Union[int, float]` with `1` → `1` (int matches first, no coercion needed)
+
 ### Container behavior
 
 - `list`/`tuple` inputs are accepted for sequence-like targets where appropriate
 - `set`/`frozenset` do not accept list/tuple input (avoid duplicate-loss surprises)
-- Mutable outputs (`list`, `dict`, `set`) are returned as new objects
+- Mutable outputs (`list`, `dict`, `set`) are always NEW objects, never the original
+- This ensures safety: mutations to validated data don't affect the original input
 
 ## Type-checker note
 
-`validate()` currently uses `type[T]` in signatures. Runtime behavior is correct, but static checkers still require suppressions for some type forms (`Union`, `Literal`, `Any`, `NewType`, `Final`, `Annotated` in some contexts). Revisit when checker support for richer type-form typing is better.
+`validate()` currently uses `type[T]` in signatures. Runtime behavior is correct, but static checkers still require suppressions for some type forms (`Union`, `Literal`, `Any`, `NewType`, `Final`, `Annotated` in some contexts).
+
+The right fix is `TypeForm[T]` from PEP 747 (`typing_extensions >= 4.15` has it), but pyright doesn't yet infer T correctly for `UnionType` through `TypeForm`. For now, call sites using these type forms use `# type: ignore[arg-type]`. Revisit when pyright adds full `TypeForm` support.
 
 ## Project structure
 
