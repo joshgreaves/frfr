@@ -7,6 +7,7 @@ import threading
 import types
 
 from typing import (
+    Annotated,
     Any,
     Callable,
     Literal,
@@ -131,6 +132,11 @@ def _format_key_path_segment(key: object) -> str:
 def _is_dataclass_type(t: object) -> bool:
     """Return True if t is a dataclass class (not an instance)."""
     return dataclasses.is_dataclass(t) and isinstance(t, type)
+
+
+def _is_newtype(t: object) -> bool:
+    """Return True if t is a NewType (callable with __supertype__, not a plain class)."""
+    return callable(t) and not isinstance(t, type) and hasattr(t, "__supertype__")
 
 
 def _coerce_to_mapping(
@@ -415,6 +421,22 @@ def compile_frozenset(
         return frozenset(elem(item, path) for item in data)
 
     return _typed
+
+
+def compile_newtype(
+    target: object,
+    get_compiled: Callable[[object], CompiledValidator[Any]],
+) -> CompiledValidator[Any]:
+    """Compile a validator for NewType — unwraps to the base type."""
+    return get_compiled(target.__supertype__)  # type: ignore[union-attr]
+
+
+def compile_annotated(
+    target: object,
+    get_compiled: Callable[[object], CompiledValidator[Any]],
+) -> CompiledValidator[Any]:
+    """Compile a validator for Annotated — ignores metadata, validates the inner type."""
+    return get_compiled(get_args(target)[0])
 
 
 def compile_union(
@@ -744,10 +766,12 @@ class Validator:
         self._compilers[dict] = compile_dict
         self._compilers[set] = compile_set
         self._compilers[frozenset] = compile_frozenset
+        self._compilers[Annotated] = compile_annotated
         self._compilers[Union] = compile_union
         self._compilers[types.UnionType] = compile_union
         self._compilers[Literal] = compile_literal
         self._predicate_compilers = [
+            (_is_newtype, compile_newtype),
             (is_typeddict, compile_typed_dict),
             (_is_namedtuple, compile_namedtuple),
             (_is_dataclass_type, compile_dataclass),

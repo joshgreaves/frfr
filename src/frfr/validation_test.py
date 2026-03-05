@@ -3,7 +3,17 @@
 import collections
 import dataclasses
 import types
-from typing import Any, Literal, NamedTuple, NotRequired, Required, TypedDict, Union
+from typing import (
+    Annotated,
+    Any,
+    Literal,
+    NamedTuple,
+    NewType,
+    NotRequired,
+    Required,
+    TypedDict,
+    Union,
+)
 
 import pytest
 
@@ -2275,3 +2285,108 @@ class TestLargeScaleIntegration:
         assert result[0]["count"] == 5
         assert result[0]["label"] == "foo"
         assert result[1]["label"] == "bar"
+
+
+# ---------------------------------------------------------------------------
+# NewType
+# ---------------------------------------------------------------------------
+
+UserId = NewType("UserId", int)
+Username = NewType("Username", str)
+SpecialUserId = NewType("SpecialUserId", UserId)  # NewType of NewType
+
+
+class TestNewType:
+    """Tests for NewType validation — should unwrap and validate as the base type."""
+
+    def test_newtype_int_valid(self) -> None:
+        result = validator.validate(UserId, 42)  # ty: ignore[invalid-argument-type]
+        assert result == 42
+        assert type(result) is int
+
+    def test_newtype_str_valid(self) -> None:
+        result = validator.validate(Username, "alice")  # ty: ignore[invalid-argument-type]
+        assert result == "alice"
+        assert type(result) is str
+
+    def test_newtype_rejects_wrong_type(self) -> None:
+        with pytest.raises(validator.ValidationError):
+            validator.validate(UserId, "not-an-int")  # type: ignore[arg-type]
+
+    def test_newtype_rejects_bool(self) -> None:
+        # bool is a subclass of int, but frfr rejects it for int
+        with pytest.raises(validator.ValidationError):
+            validator.validate(UserId, True)  # type: ignore[arg-type]
+
+    def test_newtype_rejects_float(self) -> None:
+        with pytest.raises(validator.ValidationError):
+            validator.validate(UserId, 1.0)  # type: ignore[arg-type]
+
+    def test_newtype_of_newtype(self) -> None:
+        # SpecialUserId -> UserId -> int; should validate as int
+        result = validator.validate(SpecialUserId, 99)  # ty: ignore[invalid-argument-type]
+        assert result == 99
+        assert type(result) is int
+
+    def test_newtype_in_list(self) -> None:
+        result = validator.validate(list[UserId], [1, 2, 3])
+        assert result == [1, 2, 3]
+
+    def test_newtype_in_optional(self) -> None:
+        assert validator.validate(UserId | None, None) is None  # type: ignore[arg-type]
+        assert validator.validate(UserId | None, 5) == 5  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# Annotated (transparent)
+# ---------------------------------------------------------------------------
+
+
+class TestAnnotatedTransparent:
+    """Tests for Annotated — metadata is ignored, inner type is used for validation."""
+
+    def test_annotated_int(self) -> None:
+        result = validator.validate(Annotated[int, "some metadata"], 42)  # type: ignore[arg-type]
+        assert result == 42
+        assert type(result) is int
+
+    def test_annotated_str(self) -> None:
+        result = validator.validate(Annotated[str, 99], "hello")  # type: ignore[arg-type]
+        assert result == "hello"
+
+    def test_annotated_rejects_wrong_type(self) -> None:
+        with pytest.raises(validator.ValidationError):
+            validator.validate(Annotated[int, "meta"], "not-an-int")  # type: ignore[arg-type]
+
+    def test_annotated_with_multiple_metadata(self) -> None:
+        result = validator.validate(Annotated[int, "a", "b", "c"], 7)  # type: ignore[arg-type]
+        assert result == 7
+
+    def test_annotated_list(self) -> None:
+        result = validator.validate(Annotated[list[int], "note"], [1, 2, 3])  # type: ignore[arg-type]
+        assert result == [1, 2, 3]
+
+    def test_annotated_optional(self) -> None:
+        result = validator.validate(Annotated[int | None, "nullable"], None)  # type: ignore[arg-type]
+        assert result is None
+
+    def test_annotated_in_dataclass_field(self) -> None:
+        @dataclasses.dataclass
+        class Model:
+            value: Annotated[int, "must be positive"]
+
+        result = validator.validate(Model, {"value": 10})
+        assert result.value == 10
+
+    def test_annotated_in_typed_dict_field(self) -> None:
+        class Model(TypedDict):
+            value: Annotated[str, "description"]
+
+        result = validator.validate(Model, {"value": "hello"})
+        assert result["value"] == "hello"
+
+    def test_annotated_newtype(self) -> None:
+        # Annotated wrapping a NewType should unwrap both
+        result = validator.validate(Annotated[UserId, "annotated newtype"], 5)  # type: ignore[arg-type]
+        assert result == 5
+        assert type(result) is int
