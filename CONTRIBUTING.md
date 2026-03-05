@@ -12,7 +12,7 @@ when you call `frfr.validate(MyType, data)`, you either get a valid typed value 
 
 ```bash
 # clone it
-git clone https://github.com/your-username/frfr.git
+git clone https://github.com/joshgreaves/frfr.git
 cd frfr
 
 # install with dev deps

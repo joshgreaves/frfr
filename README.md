@@ -32,37 +32,43 @@ uv add frfr
 pip install frfr
 ```
 
-requires python 3.12+
+**requires python 3.12+** — frfr uses modern typing features (PEP 695 type parameter syntax, `type` statement) that aren't available in earlier versions.
 
 ## quickstart
 
+frfr handles the nested, optional, union-y stuff you actually deal with:
+
 ```python
 import dataclasses
-import uuid
-from typing import TypedDict
+from typing import Literal
 
 import frfr
 
 @dataclasses.dataclass
-class User:
-    id: uuid.UUID
-    name: str
-    age: int
+class Address:
+    street: str
+    city: str
+    country: str = "US"
 
-class UserPayload(TypedDict):
-    id: uuid.UUID
+@dataclasses.dataclass
+class Person:
     name: str
-    age: int
+    address: Address | None
+    role: Literal["admin", "user", "guest"]
+    tags: list[str]
 
-payload = {
-    "id": "12345678-1234-5678-1234-567812345678",
+data = {
     "name": "bestie",
-    "age": 27,
+    "address": {"street": "123 Main St", "city": "Springfield"},
+    "role": "admin",
+    "tags": ["verified", "early-adopter"],
 }
 
-as_dataclass = frfr.validate(User, payload)        # User(...)
-as_typed_dict = frfr.validate(UserPayload, payload)  # dict with validated values
+person = frfr.validate(Person, data)
+# Person(name='bestie', address=Address(street='123 Main St', city='Springfield', country='US'), role='admin', tags=['verified', 'early-adopter'])
 ```
+
+nested dataclasses, optional fields, union types, literals, defaults — all validated recursively with clear error paths.
 
 ## why frfr?
 
@@ -200,6 +206,70 @@ my_validator.validate(int, 1.0)  # 1
 
 the default `frfr.validate()` stays untouched - your custom validator is isolated.
 
+## common patterns
+
+### validating API responses
+
+```python
+import frfr
+from typing import TypedDict
+
+class ApiResponse(TypedDict):
+    id: int
+    status: str
+    data: dict[str, str]
+
+response = requests.get("https://api.example.com/resource")
+validated = frfr.validate(ApiResponse, response.json())
+```
+
+### config file parsing
+
+```python
+import frfr
+import tomllib
+from typing import TypedDict
+
+class DatabaseConfig(TypedDict):
+    host: str
+    port: int
+    name: str
+
+class Config(TypedDict):
+    database: DatabaseConfig
+    debug: bool
+
+with open("config.toml", "rb") as f:
+    raw = tomllib.load(f)
+
+config = frfr.validate(Config, raw)
+```
+
+### request body validation (flask example)
+
+```python
+import dataclasses
+import frfr
+from flask import Flask, request, jsonify
+
+@dataclasses.dataclass
+class CreateUserRequest:
+    email: str
+    name: str
+    age: int | None = None
+
+app = Flask(__name__)
+
+@app.post("/users")
+def create_user():
+    try:
+        body = frfr.validate(CreateUserRequest, request.json)
+    except frfr.ValidationError as e:
+        return jsonify({"error": str(e)}), 400
+    # body is now a CreateUserRequest instance
+    return jsonify({"created": body.email})
+```
+
 ## current scope
 
 frfr is focused on strict structural validation and clear errors. it does **not** currently do:
@@ -253,7 +323,7 @@ frfr is near pydantic on the simple case, slower on more complex shapes. that's 
 | installed size (project only) | 57,277 bytes | 1,851,636 bytes |
 | installed size (project + runtime deps) | 57,277 bytes | 7,325,360 bytes |
 
-transitive pydantic deps measured: `annotated-types`, `pydantic`, `pydantic-core`, `typing-extensions`, `typing-inspection`.
+transitive pydantic deps measured: `annotated-types`, `pydantic`, `pydantic-core`, `typing-extensions`, `typing-inspection`. frfr is lowkey smol.
 
 **4) first-call vs steady-state** (`TypeAdapter` parity check, lower is better)
 
