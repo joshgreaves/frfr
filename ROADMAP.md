@@ -1,25 +1,9 @@
 # roadmap
 
-## v0.1.0 — primitive type coverage
+## released
 
-Expand supported types so frfr works on real-world schemas without gaps. Targeted for initial PyPI release.
-
-### enums
-- `Enum`, `IntEnum`, `StrEnum`, `Flag`
-
-### stdlib types
-- `datetime.datetime`, `datetime.date`, `datetime.time`, `datetime.timedelta`
-- `uuid.UUID`
-- `pathlib.Path`
-- `decimal.Decimal`
-- `bytes`
-
-### abstract collection types
-- `Sequence[T]` — accepts list or tuple
-- `Mapping[K, V]` — abstract mapping input
-
-### typing constructs
-- `typing.Final[T]` — treat as `T`
+### v0.1.0
+first release. primitive type coverage shipped.
 
 ---
 
@@ -82,4 +66,3 @@ Post-validation normalisation, e.g. `Annotated[str, frfr.Transform(str.strip)]`.
 
 ### `attrs` support
 Validate into `attrs` classes alongside the existing dataclass support.
-
