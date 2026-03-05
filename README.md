@@ -19,7 +19,7 @@ class User:
     age: int
 
 data = {"name": "bestie", "age": 27}
-user = frfr.validate(User, data)  # returns a User instance or throws
+user: User = frfr.validate(User, data)  # User instance or ValidationError
 ```
 
 that's it. that's the whole api.
@@ -64,7 +64,7 @@ data = {
     "tags": ["verified", "early-adopter"],
 }
 
-person = frfr.validate(Person, data)
+person: Person = frfr.validate(Person, data)
 # Person(name='bestie', address=Address(street='123 Main St', city='Springfield', country='US'), role='admin', tags=['verified', 'early-adopter'])
 ```
 
