@@ -80,18 +80,26 @@ no cryptic stack traces. no guessing. just facts.
 
 ## supported types
 
-- **primitives**: `str`, `int`, `float`, `bool`, `None`
-- **containers**: `list[T]`, `dict[K, V]`, `tuple[T, ...]`, `set[T]`
-- **typing**: `Optional[T]`, `Union[T1, T2]`, `Literal["a", "b"]`
-- **structured**: `TypedDict`, `@dataclass`, `NamedTuple`
-- **generics**: nested types like `list[dict[str, User]]`
+- **scalars**: `Any`, `str`, `int`, `float`, `bool`, `None`, `bytes`
+- **stdlib value types**: `decimal.Decimal`, `datetime.datetime`, `datetime.date`, `datetime.time`, `datetime.timedelta`, `uuid.UUID`, `pathlib.Path`
+- **containers**: `list[T]`, `dict[K, V]`, `tuple[T, ...]`, `tuple[T1, T2, ...]`, `set[T]`, `frozenset[T]`
+- **abstract collections**: `collections.abc.Sequence[T]`, `collections.abc.Mapping[K, V]`
+- **typing constructs**: `Optional[T]`, `Union[T1, T2]` / `T1 | T2`, `Literal[...]`, `Annotated[T, ...]` (transparent), `NewType(...)`, `Final[T]`
+- **structured types**: `TypedDict`, `@dataclass`, `NamedTuple`
+- **nested generics**: compositions like `dict[str, list[tuple[int, str | None]]]`
+
+frfr enforces strict structure by default:
+- extra keys in `TypedDict`, `dataclass`, and `NamedTuple` inputs are rejected
+- required keys/fields must be present
+- mutable containers return new objects (so validated output can't mutate original input by accident)
 
 ## philosophy
 
 1. **types mean what they say** - no sneaky coercion
 2. **fail fast, fail clear** - know exactly what's wrong
-3. **one function** - `validate()` does everything
-4. **no magic** - explicit is better than implicit
+3. **zero dependencies** - stdlib-only runtime dependency footprint
+4. **your types, not ours** - validate into existing dataclasses, TypedDicts, NamedTuples, and stdlib types
+5. **one primary entry point** - `validate()` for most usage, `Validator` when you need customization
 
 ## extending frfr
 
@@ -123,7 +131,7 @@ handlers receive the validator and path - use `validator._validate_at(type, data
 
 ### override built-in behavior
 
-want different coercion rules? compose with the exposed handlers.
+want different coercion rules? register your own handler for that exact type.
 
 ```python
 import frfr
@@ -136,13 +144,22 @@ def lenient_int(
 ) -> int:
     if isinstance(data, float) and data.is_integer():
         return int(data)
-    return frfr.validation.parse_int(validator, target, data, path)  # fall back to default
+    if type(data) is int:
+        return data
+    raise frfr.ValidationError(target, data, path=path)
 
 my_validator.register_type_handler(int, lenient_int)
 my_validator.validate(int, 1.0)  # 1
 ```
 
 the default `frfr.validate()` stays untouched - your custom validator is isolated.
+
+## current scope
+
+frfr is focused on strict structural validation and clear errors. it does **not** currently do:
+- collect-all-errors mode (it fails fast on first validation error)
+- field aliasing / key renaming
+- field-level constraints like min/max/pattern
 
 ## contributing
 
