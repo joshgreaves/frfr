@@ -4,10 +4,6 @@
 
 Expand supported types so frfr works on real-world schemas without gaps. Targeted for initial PyPI release.
 
-### bug fixes (currently fail silently or with confusing errors)
-- `NewType` — e.g. `UserId = NewType('UserId', int)` should unwrap and validate as the base type
-- `Annotated` (transparent) — `Annotated[int, X]` should work as `int`; prerequisite for any future constraint support and interop with other `Annotated`-based tooling
-
 ### enums
 - `Enum`, `IntEnum`, `StrEnum`, `Flag`
 
