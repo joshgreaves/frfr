@@ -450,6 +450,46 @@ class TestValidateEnum:
         assert result == [Color.red, Color.green]
 
 
+class TestEnumMemberAsScalar:
+    """Test using enum members as input data against scalar target types."""
+
+    def test_strenum_member_as_str(self) -> None:
+        result = frfr.validate(str, Direction.north)
+        assert result == "north"
+
+    def test_intenum_member_as_int(self) -> None:
+        result = frfr.validate(int, Priority.low)
+        assert result == 1
+
+    def test_intenum_member_as_float(self) -> None:
+        result = frfr.validate(float, Priority.low)
+        assert result == 1.0
+
+    def test_strenum_member_returns_plain_str(self) -> None:
+        result = frfr.validate(str, Direction.north)
+        assert type(result) is str
+
+    def test_intenum_member_returns_plain_int(self) -> None:
+        result = frfr.validate(int, Priority.low)
+        assert type(result) is int
+
+    def test_strenum_member_rejects_int(self) -> None:
+        with pytest.raises(frfr.ValidationError):
+            frfr.validate(int, Direction.north)
+
+    def test_intenum_member_rejects_str(self) -> None:
+        with pytest.raises(frfr.ValidationError):
+            frfr.validate(str, Priority.low)
+
+    def test_plain_enum_member_rejects_str(self) -> None:
+        with pytest.raises(frfr.ValidationError):
+            frfr.validate(str, Color.red)
+
+    def test_plain_enum_member_rejects_int(self) -> None:
+        with pytest.raises(frfr.ValidationError):
+            frfr.validate(int, Color.red)
+
+
 # ---------------------------------------------------------------------------
 # datetime
 # ---------------------------------------------------------------------------
