@@ -450,6 +450,40 @@ class TestValidateEnum:
         assert result == [Color.red, Color.green]
 
 
+class TestEnumMemberAsScalar:
+    """Test using enum members as input data against scalar target types."""
+
+    @pytest.mark.parametrize(
+        ("target", "data", "expected"),
+        [
+            pytest.param(str, Direction.north, "north", id="strenum_as_str"),
+            pytest.param(str, Direction.south, "south", id="strenum_as_str_south"),
+            pytest.param(int, Priority.low, 1, id="intenum_as_int"),
+            pytest.param(int, Priority.high, 3, id="intenum_as_int_high"),
+            pytest.param(float, Priority.low, 1.0, id="intenum_as_float"),
+        ],
+    )
+    def test_enum_member_accepted(
+        self, target: type[object], data: object, expected: object
+    ) -> None:
+        result = frfr.validate(target, data)  # type: ignore[arg-type]
+        assert result == expected
+        assert type(result) is type(expected)
+
+    @pytest.mark.parametrize(
+        ("target", "data"),
+        [
+            pytest.param(int, Direction.north, id="strenum_rejects_int"),
+            pytest.param(str, Priority.low, id="intenum_rejects_str"),
+            pytest.param(str, Color.red, id="plain_enum_rejects_str"),
+            pytest.param(int, Color.red, id="plain_enum_rejects_int"),
+        ],
+    )
+    def test_enum_member_rejected(self, target: type[object], data: object) -> None:
+        with pytest.raises(frfr.ValidationError):
+            frfr.validate(target, data)  # type: ignore[arg-type]
+
+
 # ---------------------------------------------------------------------------
 # datetime
 # ---------------------------------------------------------------------------

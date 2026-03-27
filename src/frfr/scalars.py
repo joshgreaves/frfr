@@ -2,6 +2,7 @@
 
 import datetime as dt
 import decimal
+import enum
 import pathlib
 import uuid
 from typing import Any, Callable
@@ -41,9 +42,11 @@ def compile_int(
     def _int(data: object, path: str) -> Any:
         if type(data) is bool:
             raise frfr.ValidationError(target, data, path=path)
-        if type(data) is not int:
-            raise frfr.ValidationError(target, data, path=path)
-        return data
+        if type(data) is int:
+            return data
+        if isinstance(data, enum.IntEnum):
+            return int(data.value)
+        raise frfr.ValidationError(target, data, path=path)
 
     return _int
 
@@ -61,6 +64,8 @@ def compile_float(
             return data
         if type(data) is int:
             return float(data)
+        if isinstance(data, enum.IntEnum):
+            return float(data.value)
         raise frfr.ValidationError(target, data, path=path)
 
     return _float
@@ -73,9 +78,11 @@ def compile_str(
     """Compile a validator for str."""
 
     def _str(data: object, path: str) -> Any:
-        if type(data) is not str:
-            raise frfr.ValidationError(target, data, path=path)
-        return data
+        if type(data) is str:
+            return data
+        if isinstance(data, enum.StrEnum):
+            return str(data.value)
+        raise frfr.ValidationError(target, data, path=path)
 
     return _str
 
