@@ -44,8 +44,8 @@ def compile_int(
             raise frfr.ValidationError(target, data, path=path)
         if type(data) is int:
             return data
-        if isinstance(data, int) and isinstance(data, enum.Enum):
-            return int(data)
+        if isinstance(data, enum.IntEnum):
+            return int(data.value)
         raise frfr.ValidationError(target, data, path=path)
 
     return _int
@@ -64,8 +64,8 @@ def compile_float(
             return data
         if type(data) is int:
             return float(data)
-        if isinstance(data, int) and isinstance(data, enum.Enum):
-            return float(int(data))
+        if isinstance(data, enum.IntEnum):
+            return float(data.value)
         raise frfr.ValidationError(target, data, path=path)
 
     return _float
@@ -80,8 +80,8 @@ def compile_str(
     def _str(data: object, path: str) -> Any:
         if type(data) is str:
             return data
-        if isinstance(data, str) and isinstance(data, enum.Enum):
-            return str(data)
+        if isinstance(data, enum.StrEnum):
+            return str(data.value)
         raise frfr.ValidationError(target, data, path=path)
 
     return _str
