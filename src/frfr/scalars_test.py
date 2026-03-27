@@ -453,41 +453,35 @@ class TestValidateEnum:
 class TestEnumMemberAsScalar:
     """Test using enum members as input data against scalar target types."""
 
-    def test_strenum_member_as_str(self) -> None:
-        result = frfr.validate(str, Direction.north)
-        assert result == "north"
+    @pytest.mark.parametrize(
+        ("target", "data", "expected"),
+        [
+            pytest.param(str, Direction.north, "north", id="strenum_as_str"),
+            pytest.param(str, Direction.south, "south", id="strenum_as_str_south"),
+            pytest.param(int, Priority.low, 1, id="intenum_as_int"),
+            pytest.param(int, Priority.high, 3, id="intenum_as_int_high"),
+            pytest.param(float, Priority.low, 1.0, id="intenum_as_float"),
+        ],
+    )
+    def test_enum_member_accepted(
+        self, target: type[object], data: object, expected: object
+    ) -> None:
+        result = frfr.validate(target, data)  # type: ignore[arg-type]
+        assert result == expected
+        assert type(result) is type(expected)
 
-    def test_intenum_member_as_int(self) -> None:
-        result = frfr.validate(int, Priority.low)
-        assert result == 1
-
-    def test_intenum_member_as_float(self) -> None:
-        result = frfr.validate(float, Priority.low)
-        assert result == 1.0
-
-    def test_strenum_member_returns_plain_str(self) -> None:
-        result = frfr.validate(str, Direction.north)
-        assert type(result) is str
-
-    def test_intenum_member_returns_plain_int(self) -> None:
-        result = frfr.validate(int, Priority.low)
-        assert type(result) is int
-
-    def test_strenum_member_rejects_int(self) -> None:
+    @pytest.mark.parametrize(
+        ("target", "data"),
+        [
+            pytest.param(int, Direction.north, id="strenum_rejects_int"),
+            pytest.param(str, Priority.low, id="intenum_rejects_str"),
+            pytest.param(str, Color.red, id="plain_enum_rejects_str"),
+            pytest.param(int, Color.red, id="plain_enum_rejects_int"),
+        ],
+    )
+    def test_enum_member_rejected(self, target: type[object], data: object) -> None:
         with pytest.raises(frfr.ValidationError):
-            frfr.validate(int, Direction.north)
-
-    def test_intenum_member_rejects_str(self) -> None:
-        with pytest.raises(frfr.ValidationError):
-            frfr.validate(str, Priority.low)
-
-    def test_plain_enum_member_rejects_str(self) -> None:
-        with pytest.raises(frfr.ValidationError):
-            frfr.validate(str, Color.red)
-
-    def test_plain_enum_member_rejects_int(self) -> None:
-        with pytest.raises(frfr.ValidationError):
-            frfr.validate(int, Color.red)
+            frfr.validate(target, data)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
